@@ -90,7 +90,7 @@ second is only for `npm run import`.
 
 ```bash
 docker compose up -d --build     # first build takes a few minutes
-curl localhost:3000/api/health
+curl localhost:3004/api/health
 ```
 
 A JSON response means it's up. `"dataImported":false` is expected — the database
@@ -109,7 +109,7 @@ under **DNS**, enable **MagicDNS** and **HTTPS Certificates** — `serve` cannot
 issue a certificate without them.
 
 ```bash
-sudo tailscale serve --bg 3000
+sudo tailscale serve --bg 3004
 sudo tailscale serve status        # prints your https://<host>.<tailnet>.ts.net URL
 ```
 
@@ -244,7 +244,7 @@ address. Don't scale this service while it is backed by SQLite.
 
 ### Reaching it
 
-The container listens on 3000. **Do not open port 3000 in the security group.**
+The app is published on host port **3004**. **Do not open it in the security group.**
 The API has no authentication, so anything that can reach it can send live mail
 from your Gmail to your whole list.
 
@@ -254,10 +254,10 @@ The walkthrough uses Tailscale, which needs no open port at all. Two alternative
 and forward the port:
 
 ```bash
-ssh -L 3000:localhost:3000 ec2-user@<instance>
+ssh -L 3004:localhost:3004 ec2-user@<instance>
 ```
 
-Then open <http://localhost:3000>.
+Then open <http://localhost:3004>.
 
 **nginx with a password**, if you have a domain — see
 [Putting it on a public URL](#putting-it-on-a-public-url) for the full sequence.
@@ -279,7 +279,7 @@ server {
         auth_basic           "Research Outreach";
         auth_basic_user_file /etc/nginx/.htpasswd;
 
-        proxy_pass         http://127.0.0.1:3000;
+        proxy_pass         http://127.0.0.1:3004;
         proxy_http_version 1.1;
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
@@ -343,7 +343,7 @@ stops, and DNS silently points at nothing.
 | 443 | `0.0.0.0/0` | the site |
 | 22 | your IP only | admin |
 
-**Port 3000 must not appear in that list.** It is the unauthenticated app; nginx
+**Port 3004 must not appear in that list.** It is the unauthenticated app; nginx
 reaches it over localhost, nobody else needs to.
 
 **3. DNS.** An `A` record for the name you want — `outreach.your-domain.com` —
@@ -403,7 +403,7 @@ the tailnet (both under DNS). Then pick one:
 **Private — reachable from your devices, nobody else's.** This is the one to use.
 
 ```bash
-sudo tailscale serve --bg 3000
+sudo tailscale serve --bg 3004
 sudo tailscale serve status             # prints the https://<host>.<tailnet>.ts.net URL
 ```
 
@@ -417,13 +417,13 @@ in. Funnel may need enabling for the node in the admin console first, and it can
 only listen on 443, 8443 or 10000.
 
 ```bash
-sudo tailscale funnel --bg 3000
+sudo tailscale funnel --bg 3004
 sudo tailscale funnel status
 ```
 
 If you do this, put the nginx basic auth from
 [Reaching it](#reaching-it) in front and point Funnel at nginx instead of at
-3000 — a public URL to an app with no login is an open relay to your Gmail.
+3004 — a public URL to an app with no login is an open relay to your Gmail.
 
 ### Other free options
 
@@ -431,7 +431,7 @@ If you do this, put the nginx basic auth from
   certbot path above. More moving parts than Tailscale: you still open 80 and
   443, and because DuckDNS allows only one TXT record per domain you need
   `certbot-dns-duckdns` (or HTTP-01 with port 80 already reachable).
-- **Cloudflare quick tunnel** — `cloudflared tunnel --url http://localhost:3000`
+- **Cloudflare quick tunnel** — `cloudflared tunnel --url http://localhost:3004`
   gives an instant `*.trycloudflare.com` HTTPS URL with no account. Fine for
   showing someone the UI for ten minutes; the URL changes on every restart, so
   it is not a deployment.

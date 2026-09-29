@@ -9,8 +9,16 @@ services:
     # resumes without anyone logging in. Batches left mid-run are marked paused
     # at startup and can be resumed from the Send page.
     restart: unless-stopped
+    # Published on 3004, not 3000: 3000 is a popular default and was already
+    # taken on the instance. The container still listens on 3000 internally —
+    # only the host side moves, so anything proxying to this app (Tailscale
+    # serve, nginx, an SSH tunnel) must target 3004.
+    #
+    # Override with HOST_PORT, which compose reads from the shell or a `.env`
+    # file — not from `.env.local`, which only supplies the container's own
+    # environment.
     ports:
-      - "3000:3000"
+      - "${HOST_PORT:-3004}:3000"
     env_file:
       - .env.local
     environment:
