@@ -13,7 +13,12 @@ import { startScheduler } from "./scheduler";
  */
 const g = globalThis as unknown as { __raBootstrapped?: boolean };
 
-if (!g.__raBootstrapped) {
+// `next build` imports this module while collecting page data. Running startup
+// there would open a database and start a scheduler inside the build — which it
+// did, once per build worker, until this guard.
+const building = process.env.NEXT_PHASE === "phase-production-build";
+
+if (!building && !g.__raBootstrapped) {
   g.__raBootstrapped = true;
 
   // A campaign left 'running' by a crash or restart is no longer running —

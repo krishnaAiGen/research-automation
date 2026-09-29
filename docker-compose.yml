@@ -1,0 +1,24 @@
+# Single-instance by design. The "nobody is emailed twice" guarantee is a
+# NOT EXISTS check against the sends table, which two containers could both
+# pass for the same address — so do not scale this service to more than one
+# replica while it is backed by SQLite.
+services:
+  app:
+    build: .
+    # Restart on crash and come back up after an EC2 reboot, so a schedule
+    # resumes without anyone logging in. Batches left mid-run are marked paused
+    # at startup and can be resumed from the Send page.
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_PATH: /data/app.db
+    volumes:
+      # A named volume, not a bind mount: it sidesteps host/container uid
+      # mismatches on the database file.
+      - app-data:/data
+
+volumes:
+  app-data:

@@ -1,8 +1,12 @@
 # Deploying
 
 This app needs **a writable disk and a process that stays alive**. That rules
-out serverless hosts, Vercel included. It runs unchanged on any host that gives
-it those two things.
+out serverless hosts, Vercel included. Docker on an EC2 instance gives it both,
+with no code changes — see [Docker on EC2](#docker-on-ec2).
+
+Render, Railway, Fly or any VPS work the same way: build `npm ci && npm run
+build`, start `npm start` (it honours `$PORT`), and mount a disk with
+`DATABASE_PATH` pointing into it.
 
 ## Why not Vercel
 
@@ -49,31 +53,76 @@ Add an entry the same way if you ever take on another dependency with an install
 script. Anything not listed there is worth reading before you approve it — that
 is the point of the mechanism.
 
-## Recommended: Render, Railway, Fly, or any VPS
+## Docker on EC2
 
-No code changes and no Dockerfile — these build straight from the repo.
+`Dockerfile` and `docker-compose.yml` are in the repo. The image was built and
+run end to end: all pages and API routes 200, the scheduler starts exactly once,
+data survives `docker restart`, and the container reports `healthy`.
 
-1. **Create a web service** from this GitHub repo.
-   - Build command: `npm ci && npm run build`
-   - Start command: `npm start`
-   - `npm start` listens on `$PORT`, which the platform sets. Don't hardcode a port.
-2. **Attach a persistent disk** and mount it at `/data`.
-   1 GB is ample; the database is about 17 MB with ~6,000 papers.
-3. **Set the environment variables:**
+On the instance, once, install Docker:
 
-   | Variable | Value |
-   | --- | --- |
-   | `DATABASE_PATH` | `/data/app.db` — must point at the mounted disk, or the database dies with the container |
-   | `OPENROUTER_API_KEY` | Required for any send, dry runs included |
-   | `GMAIL_ADDRESS` / `GMAIL_APP_PASSWORD` | Required for live delivery. Without them only dry runs work |
-   | `GMAIL_FROM_NAME` | Optional display name |
+```bash
+sudo dnf install -y docker            # Amazon Linux 2023 (apt-get on Ubuntu)
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER         # log out and back in for this to apply
+```
 
-   `SCRAPER_ROOT` is only read by `npm run import`, so it isn't needed on the server.
+Then:
 
-4. **Deploy.** It comes up with an empty database and creates its own schema,
-   the default prompt configuration, and an empty first collection. Every page
-   loads; the dashboard just shows zeros. Verified — nothing needs seeding for
-   the app to start.
+```bash
+git clone https://github.com/krishnaAiGen/research-automation.git
+cd research-automation
+cp .env.example .env.local            # fill in the keys; compose reads this file
+docker compose up -d --build
+curl localhost:3000/api/health
+```
+
+That's it. `restart: unless-stopped` brings it back after a crash or an instance
+reboot, so a schedule resumes unattended; anything left mid-batch is marked
+paused at startup and resumes from the Send page.
+
+**Environment variables** go in `.env.local`:
+
+| Variable | Value |
+| --- | --- |
+| `OPENROUTER_API_KEY` | Required for any send, dry runs included |
+| `GMAIL_ADDRESS` / `GMAIL_APP_PASSWORD` | Required for live delivery. Without them only dry runs work |
+| `GMAIL_FROM_NAME` | Optional display name |
+
+`DATABASE_PATH` is set to `/data/app.db` by compose — don't override it, or the
+database lands on the container filesystem and is discarded on the next deploy.
+`SCRAPER_ROOT` is only read by `npm run import` and isn't needed.
+
+**The volume is the whole point.** Compose declares a named volume `app-data`
+mounted at `/data`. It outlives the container, so `docker compose up --build`
+after a `git pull` redeploys the code and keeps the data. `docker compose down`
+keeps it too; only `docker compose down -v` destroys it.
+
+**Reaching it.** The container listens on 3000. Don't open 3000 to the world —
+the API has no authentication, so anyone who found it could start a live send
+from your Gmail. Either keep the security group closed and use an SSH tunnel:
+
+```bash
+ssh -L 3000:localhost:3000 ec2-user@<instance>
+# then open http://localhost:3000
+```
+
+…or put nginx or a load balancer in front with TLS and a password.
+
+**Maintenance runs inside the container** — verified working, since the image
+keeps the dev dependencies `tsx` needs:
+
+```bash
+docker compose exec app npm run reset       # clear send history, backup first
+docker compose exec app npm run reset -- --prompts
+docker compose logs -f app
+```
+
+Backups are just the volume:
+
+```bash
+docker compose exec app sh -c 'cd /data && tar cf - app.db' > backup-$(date +%F).tar
+```
 
 ## Getting recipients onto the server
 

@@ -1,0 +1,19 @@
+# Never bake the database into the image: it holds thousands of real
+# researchers' addresses, and it belongs on the mounted volume anyway.
+data
+
+node_modules
+.next
+out
+build
+
+.env
+.env.local
+
+.git
+.gitignore
+
+*.log
+.DS_Store
+next-env.d.ts
+tsconfig.tsbuildinfo

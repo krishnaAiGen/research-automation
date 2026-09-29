@@ -89,7 +89,34 @@ function open(): Database.Database {
   return db;
 }
 
-export const db: Database.Database = globalForDb.__raDb ?? (globalForDb.__raDb = open());
+function handle(): Database.Database {
+  return globalForDb.__raDb ?? (globalForDb.__raDb = open());
+}
+
+/**
+ * Opened on first use, not on import.
+ *
+ * `next build` imports every route module during "Collecting page data" to read
+ * its config exports. Opening at module scope therefore created and migrated a
+ * database as a side effect of building — and because that phase runs several
+ * workers in parallel, on a fresh database they raced each other and the build
+ * died with SQLITE_BUSY. Deferring means a build touches no database at all.
+ */
+export const db: Database.Database = new Proxy({} as Database.Database, {
+  get(_target, prop, receiver) {
+    const h = handle();
+    const value = Reflect.get(h, prop, h);
+    // better-sqlite3's methods are native and must keep their receiver;
+    // `prepare`/`transaction` also return values that close over it.
+    return typeof value === "function" ? value.bind(h) : value;
+  },
+  set(_target, prop, value) {
+    return Reflect.set(handle(), prop, value);
+  },
+  has(_target, prop) {
+    return Reflect.has(handle(), prop);
+  },
+});
 
 function migrate(db: Database.Database) {
   db.exec(`
