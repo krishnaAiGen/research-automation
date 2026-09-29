@@ -102,6 +102,23 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
         </div>
       )}
 
+      {/* A badge is too easy to miss, and "no email arrived" after a dry run
+          looks exactly like a broken send. */}
+      {campaign.dry_run === 1 && (
+        <div
+          className="rounded-lg p-3 text-sm"
+          style={{ background: "rgba(250,178,25,0.10)", color: "var(--text-secondary)" }}
+        >
+          <strong>Dry run — no email was delivered.</strong> These messages were
+          generated and logged so you can read them below. To actually send, create a
+          new batch on the{" "}
+          <Link href="/campaigns" className="underline">
+            Send page
+          </Link>{" "}
+          with <em>Dry run</em> unchecked.
+        </div>
+      )}
+
       <Card>
         <Progress
           value={done}
@@ -111,7 +128,14 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
       </Card>
 
       <div className="grid gap-4 sm:grid-cols-4">
-        <StatTile label="Sent" value={campaign.sent.toLocaleString()} tone="good" />
+        {/* In a dry run nothing is delivered, so calling the count "Sent" reads
+            as a successful send that never happened. */}
+        <StatTile
+          label={campaign.dry_run === 1 ? "Generated" : "Sent"}
+          value={campaign.sent.toLocaleString()}
+          hint={campaign.dry_run === 1 ? "Dry run — nothing delivered" : undefined}
+          tone={campaign.dry_run === 1 ? "neutral" : "good"}
+        />
         <StatTile label="Failed" value={campaign.failed.toLocaleString()} tone={campaign.failed > 0 ? "critical" : "neutral"} />
         <StatTile label="Skipped" value={campaign.skipped.toLocaleString()} hint="Already emailed elsewhere" />
         <StatTile label="Target" value={campaign.target_count.toLocaleString()} hint={`${(campaign.send_delay_ms / 1000).toFixed(1)}s delay`} />

@@ -390,7 +390,7 @@ export default function CampaignsPage() {
                   <Progress
                     value={done}
                     total={Math.max(1, c.target_count)}
-                    label={`${c.sent.toLocaleString()} sent${c.failed > 0 ? `, ${c.failed} failed` : ""}${c.skipped > 0 ? `, ${c.skipped} skipped` : ""}`}
+                    label={`${c.sent.toLocaleString()} ${c.dry_run === 1 ? "generated (not sent)" : "sent"}${c.failed > 0 ? `, ${c.failed} failed` : ""}${c.skipped > 0 ? `, ${c.skipped} skipped` : ""}`}
                   />
                 </div>
               );
