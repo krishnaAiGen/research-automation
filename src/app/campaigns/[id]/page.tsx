@@ -2,7 +2,8 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { Card, Badge, Progress, StatTile, Empty } from "@/components/ui";
+import { Card, Badge, Progress, StatTile, Empty, LoadError } from "@/components/ui";
+import { getJSON, errorMessage } from "@/lib/api";
 import type { Campaign } from "@/lib/types";
 
 type SendRow = {
@@ -22,14 +23,22 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
   const [sends, setSends] = useState<SendRow[]>([]);
   const [run, setRun] = useState<{ running: boolean; current?: string | null }>({ running: false });
   const [open, setOpen] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const load = async () => {
-    const res = await fetch(`/api/campaigns/${id}`);
-    if (!res.ok) return;
-    const json = await res.json();
-    setCampaign(json.campaign);
-    setSends(json.sends);
-    setRun(json.run);
+    try {
+      const json = await getJSON<{
+        campaign: Campaign;
+        sends: SendRow[];
+        run: { running: boolean; current?: string | null };
+      }>(`/api/campaigns/${id}`);
+      setCampaign(json.campaign);
+      setSends(json.sends);
+      setRun(json.run);
+      setError(null);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   };
 
   useEffect(() => {
@@ -48,6 +57,7 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
     load();
   };
 
+  if (error && !campaign) return <LoadError message={error} onRetry={() => load()} />;
   if (!campaign) return <p style={{ color: "var(--text-muted)" }}>Loading…</p>;
 
   const done = campaign.sent + campaign.failed;

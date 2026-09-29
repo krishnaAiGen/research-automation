@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Card, Field, Badge, Progress, Toast, Empty, StatTile } from "@/components/ui";
+import { Card, Field, Badge, Progress, Toast, Empty, StatTile, LoadError } from "@/components/ui";
+import { getJSON, errorMessage } from "@/lib/api";
 import type { CollectionSummary, PromptConfig } from "@/lib/types";
 import type { CampaignSummary } from "@/lib/stats";
 
@@ -22,6 +23,7 @@ export default function CampaignsPage() {
   const [configs, setConfigs] = useState<PromptConfig[]>([]);
   const [toast, setToast] = useState<{ msg: string; tone: "ok" | "error" }>({ msg: "", tone: "ok" });
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     name: "",
@@ -37,10 +39,18 @@ export default function CampaignsPage() {
   });
 
   const load = async () => {
-    const [d, p] = await Promise.all([
-      fetch("/api/campaigns").then((r) => r.json()),
-      fetch("/api/prompts").then((r) => r.json()),
-    ]);
+    let d: Data;
+    let p: { configs: PromptConfig[] };
+    try {
+      [d, p] = await Promise.all([
+        getJSON<Data>("/api/campaigns"),
+        getJSON<{ configs: PromptConfig[] }>("/api/prompts"),
+      ]);
+      setError(null);
+    } catch (err) {
+      setError(errorMessage(err));
+      return;
+    }
     setData(d);
     setConfigs(p.configs);
     setForm((f) => ({
@@ -57,6 +67,7 @@ export default function CampaignsPage() {
     return () => clearInterval(t);
   }, []);
 
+  if (error && !data) return <LoadError message={error} onRetry={() => load()} />;
   if (!data) return <p style={{ color: "var(--text-muted)" }}>Loading…</p>;
 
   const collection =

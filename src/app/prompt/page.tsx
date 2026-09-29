@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, Field, Toast, Badge } from "@/components/ui";
+import { Card, Field, Toast, Badge, LoadError } from "@/components/ui";
+import { getJSON, errorMessage } from "@/lib/api";
 import { MODEL_CHOICES } from "@/lib/models";
 import type { PromptConfig } from "@/lib/types";
 
@@ -22,16 +23,21 @@ export default function PromptPage() {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; tone: "ok" | "error" }>({ msg: "", tone: "ok" });
+  const [error, setError] = useState<string | null>(null);
 
   const load = async (keepId?: number) => {
-    const { configs } = (await fetch("/api/prompts").then((r) => r.json())) as {
-      configs: PromptConfig[];
-    };
-    setConfigs(configs);
-    const pick = configs.find((c) => c.id === keepId) ?? configs.find((c) => c.is_active) ?? configs[0];
-    if (pick) {
-      setSelectedId(pick.id);
-      setDraft({ ...pick });
+    try {
+      const { configs } = await getJSON<{ configs: PromptConfig[] }>("/api/prompts");
+      setConfigs(configs);
+      const pick =
+        configs.find((c) => c.id === keepId) ?? configs.find((c) => c.is_active) ?? configs[0];
+      if (pick) {
+        setSelectedId(pick.id);
+        setDraft({ ...pick });
+      }
+      setError(null);
+    } catch (err) {
+      setError(errorMessage(err));
     }
   };
 
@@ -128,6 +134,7 @@ export default function PromptPage() {
     if (json.modelError) setToast({ msg: json.modelError, tone: "error" });
   };
 
+  if (error && !draft) return <LoadError message={error} onRetry={() => load()} />;
   if (!draft) return <p style={{ color: "var(--text-muted)" }}>Loading…</p>;
 
   return (

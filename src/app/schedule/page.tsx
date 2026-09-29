@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Card, Field, Badge, Toast, Empty, StatTile } from "@/components/ui";
+import { Card, Field, Badge, Toast, Empty, StatTile, LoadError } from "@/components/ui";
+import { getJSON, errorMessage } from "@/lib/api";
 import type { CollectionSummary, PromptConfig, Schedule } from "@/lib/types";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -34,6 +35,7 @@ export default function SchedulePage() {
   const [configs, setConfigs] = useState<PromptConfig[]>([]);
   const [toast, setToast] = useState<{ msg: string; tone: "ok" | "error" }>({ msg: "", tone: "ok" });
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     name: "",
@@ -51,10 +53,24 @@ export default function SchedulePage() {
   });
 
   const load = async () => {
-    const [s, p] = await Promise.all([
-      fetch("/api/schedules").then((r) => r.json()),
-      fetch("/api/prompts").then((r) => r.json()),
-    ]);
+    let s: {
+      schedules: Schedule[];
+      upcoming: Run[];
+      collections: CollectionSummary[];
+    };
+    let p: { configs: PromptConfig[] };
+    try {
+      [s, p] = await Promise.all([
+        getJSON<typeof s>("/api/schedules"),
+        getJSON<{ configs: PromptConfig[] }>("/api/prompts"),
+      ]);
+      setError(null);
+    } catch (err) {
+      // This page renders an empty shell rather than gating on state, so
+      // without this the failure would be completely silent.
+      setError(errorMessage(err));
+      return;
+    }
     setSchedules(s.schedules);
     setRuns(s.upcoming);
     setCollections(s.collections);
@@ -116,6 +132,10 @@ export default function SchedulePage() {
   const perDay =
     form.interval_minutes > 0 ? (1440 / form.interval_minutes) * form.batch_size : 0;
   const daysToFinish = perDay > 0 ? Math.ceil(pending / perDay) : 0;
+
+  if (error && collections.length === 0) {
+    return <LoadError message={error} onRetry={() => load()} />;
+  }
 
   return (
     <div className="space-y-5">

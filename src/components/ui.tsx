@@ -167,6 +167,39 @@ export function Empty({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Shown in place of a page whose data could not be loaded. Replaces an
+ * indefinite "Loading…", which is indistinguishable from a slow request and
+ * tells nobody anything.
+ */
+export function LoadError({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  return (
+    <div className="card p-5">
+      <h2 className="text-[0.95rem] font-semibold" style={{ color: "var(--critical)" }}>
+        Could not load this page
+      </h2>
+      <p className="mt-2 text-sm" style={{ color: "var(--text-secondary)" }}>
+        The page loaded but its data request failed, so there is nothing to show.
+      </p>
+      <pre
+        className="mt-3 overflow-x-auto whitespace-pre-wrap rounded-lg p-3 text-xs"
+        style={{ background: "var(--plane)" }}
+      >
+        {message}
+      </pre>
+      <p className="mt-3 text-xs" style={{ color: "var(--text-muted)" }}>
+        A 500 here usually means the server could not open the database — check that the deployment
+        has a writable disk and that the database file exists.
+      </p>
+      {onRetry && (
+        <button className="btn mt-3" onClick={onRetry}>
+          Try again
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function Toast({ message, tone }: { message: string; tone: "ok" | "error" }) {
   if (!message) return null;
   return (

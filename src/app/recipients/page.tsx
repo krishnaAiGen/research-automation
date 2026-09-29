@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Card, Badge, Empty, Field, Toast, Progress } from "@/components/ui";
+import { Card, Badge, Empty, Field, Toast, Progress, LoadError } from "@/components/ui";
+import { getJSON, errorMessage } from "@/lib/api";
 import type { CollectionSummary } from "@/lib/types";
 
 type Row = {
@@ -38,23 +39,32 @@ export default function RecipientsPage() {
   const [addForm, setAddForm] = useState({ emails: "", name: "", notes: "" });
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; tone: "ok" | "error" }>({ msg: "", tone: "ok" });
+  const [error, setError] = useState<string | null>(null);
 
   const active = collections.find((c) => c.id === activeId) ?? null;
 
   const loadCollections = useCallback(async (keepId?: number) => {
-    const d = await fetch("/api/collections").then((r) => r.json());
-    setCollections(d.collections);
-    setActiveId((current) => {
-      const want = keepId ?? current ?? d.defaultId;
-      return d.collections.some((c: CollectionSummary) => c.id === want) ? want : d.defaultId;
-    });
+    try {
+      const d = await getJSON<{ collections: CollectionSummary[]; defaultId: number }>(
+        "/api/collections",
+      );
+      setCollections(d.collections);
+      setActiveId((current) => {
+        const want = keepId ?? current ?? d.defaultId;
+        return d.collections.some((c) => c.id === want) ? want : d.defaultId;
+      });
+      setError(null);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
   }, []);
 
   useEffect(() => {
     loadCollections();
-    fetch("/api/campaigns")
-      .then((r) => r.json())
-      .then((d) => setTracks(d.tracks ?? []));
+    // Tracks are a nicety — a failure here must not take the page down.
+    getJSON<{ tracks?: string[] }>("/api/campaigns")
+      .then((d) => setTracks(d.tracks ?? []))
+      .catch(() => setTracks([]));
   }, [loadCollections]);
 
   useEffect(() => {
@@ -73,14 +83,18 @@ export default function RecipientsPage() {
         page: String(page),
         collection_id: String(activeId),
       });
-      fetch(`/api/recipients?${params}`)
-        .then((r) => r.json())
+      getJSON<{ rows: Row[]; total: number; pages: number }>(`/api/recipients?${params}`)
         .then((d) => {
           setRows(d.rows);
           setTotal(d.total);
           setPages(d.pages);
           setLoading(false);
           setSelected(new Set());
+          setError(null);
+        })
+        .catch((err) => {
+          setLoading(false);
+          setError(errorMessage(err));
         });
     }, 250);
     return () => clearTimeout(t);
@@ -96,14 +110,18 @@ export default function RecipientsPage() {
       page: String(page),
       collection_id: String(activeId),
     });
-    const [, d] = await Promise.all([
-      loadCollections(activeId),
-      fetch(`/api/recipients?${params}`).then((r) => r.json()),
-    ]);
-    setRows(d.rows);
-    setTotal(d.total);
-    setPages(d.pages);
-    setSelected(new Set());
+    try {
+      const [, d] = await Promise.all([
+        loadCollections(activeId),
+        getJSON<{ rows: Row[]; total: number; pages: number }>(`/api/recipients?${params}`),
+      ]);
+      setRows(d.rows);
+      setTotal(d.total);
+      setPages(d.pages);
+      setSelected(new Set());
+    } catch (err) {
+      setToast({ msg: errorMessage(err), tone: "error" });
+    }
   };
 
   const resetPage = (fn: () => void) => {
@@ -205,6 +223,10 @@ export default function RecipientsPage() {
 
   const allOnPageSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
   const emailCount = addForm.emails.split(/[,;\s]+/).filter(Boolean).length;
+
+  if (error && collections.length === 0) {
+    return <LoadError message={error} onRetry={() => loadCollections()} />;
+  }
 
   return (
     <div className="space-y-5">

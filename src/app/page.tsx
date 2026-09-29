@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Card, StatTile, Badge, Progress, Empty } from "@/components/ui";
+import { Card, StatTile, Badge, Progress, Empty, LoadError } from "@/components/ui";
+import { getJSON, errorMessage } from "@/lib/api";
 import { DailyVolume, TrackCoverage, DomainBars } from "@/components/charts";
 import type {
   Overview,
@@ -35,6 +36,8 @@ type Health = {
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadAt, setReloadAt] = useState(0);
   // 90 by default: the imported history predates a 30-day window, and an empty
   // chart on first load reads as "nothing ever happened".
   const [days, setDays] = useState(90);
@@ -42,13 +45,19 @@ export default function Dashboard() {
   useEffect(() => {
     let alive = true;
     const load = async () => {
-      const [s, h] = await Promise.all([
-        fetch(`/api/stats?days=${days}`).then((r) => r.json()),
-        fetch("/api/health").then((r) => r.json()),
-      ]);
-      if (!alive) return;
-      setStats(s);
-      setHealth(h);
+      try {
+        const [s, h] = await Promise.all([
+          getJSON<Stats>(`/api/stats?days=${days}`),
+          getJSON<Health>("/api/health"),
+        ]);
+        if (!alive) return;
+        setStats(s);
+        setHealth(h);
+        setError(null);
+      } catch (err) {
+        if (!alive) return;
+        setError(errorMessage(err));
+      }
     };
     load();
     // Poll so a running campaign's numbers move without a manual refresh.
@@ -57,7 +66,13 @@ export default function Dashboard() {
       alive = false;
       clearInterval(t);
     };
-  }, [days]);
+  }, [days, reloadAt]);
+
+  // Only a failure with nothing already on screen replaces the page; once data
+  // has loaded, a failed poll leaves the last good numbers up.
+  if (error && (!stats || !health)) {
+    return <LoadError message={error} onRetry={() => setReloadAt(Date.now())} />;
+  }
 
   if (!stats || !health) {
     return <p style={{ color: "var(--text-muted)" }}>Loading…</p>;
