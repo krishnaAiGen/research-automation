@@ -164,12 +164,37 @@ docker compose ps                      # app should be Up
 curl -sf localhost:3004/api/health && echo OK
 ```
 
-Then **install Tailscale on the machine you want to browse from** and sign into
-the same account. This is the step people miss: `serve` publishes into your
-tailnet, so without the client the name will not resolve anywhere.
+Then **install Tailscale on the machine you are browsing from** and sign in with
+the same account:
 
-Open the URL from your laptop or phone, anywhere in the world. Real certificate,
-no warnings, nothing exposed to the internet.
+```bash
+brew install --cask tailscale     # macOS; or https://tailscale.com/download
+tailscale status                  # the instance should be listed
+```
+
+This is not optional and it is the step everyone misses. A `ts.net` name is
+resolved by MagicDNS, which only answers for devices in your tailnet — so from a
+machine without the client you get:
+
+```
+DNS_PROBE_FINISHED_NXDOMAIN
+```
+
+That is DNS failing, not the app. Nothing is wrong with the instance.
+
+Once connected, open the URL from that laptop or phone, anywhere in the world.
+Real certificate, no warnings, nothing exposed to the internet.
+
+**Want a URL that works on any device with nothing installed?** Then `serve` is
+the wrong verb — it is tailnet-only by design. That is `tailscale funnel`
+(public, so add the nginx password first) or the
+[bought-domain route](#putting-it-on-a-public-url). And to just look at the app
+right now without installing anything, forward the port over SSH:
+
+```bash
+ssh -i /path/to/key.pem -L 3004:localhost:3004 ubuntu@<instance-public-ip>
+# then open http://localhost:3004
+```
 
 **A nicer hostname.** The default name is the instance's internal DNS name. Rename
 the machine and the URL follows:
