@@ -19,6 +19,36 @@ scheduler that silently never fires. If you must stay on Vercel, the real work
 is: port every query to a hosted Postgres, replace the scheduler with Vercel
 Cron on a Pro plan, and move run state into the database.
 
+## The install-scripts warning
+
+A build log line like this is **advisory, not a failure**:
+
+```
+npm warn install-scripts 2 packages have install scripts not yet covered by allowScripts:
+npm warn install-scripts   better-sqlite3@11.10.0 (install: prebuild-install || node-gyp rebuild)
+npm warn install-scripts   esbuild@0.28.2 (postinstall: node install.js)
+```
+
+npm 11 still runs those scripts and only prints the list. npm 12 is expected to
+**block** unapproved ones — and both of these matter: better-sqlite3's builds the
+native `.node` binding, and esbuild's fetches the binary `tsx` runs on, which
+`npm run import` and `npm run reset` need. Blocked, the app would not start on
+any host.
+
+`package.json` therefore carries an explicit approval, so the warning is gone and
+an npm 12 upgrade cannot break the install:
+
+```json
+"allowScripts": {
+  "better-sqlite3": true,
+  "esbuild": true
+}
+```
+
+Add an entry the same way if you ever take on another dependency with an install
+script. Anything not listed there is worth reading before you approve it — that
+is the point of the mechanism.
+
 ## Recommended: Render, Railway, Fly, or any VPS
 
 No code changes and no Dockerfile — these build straight from the repo.
