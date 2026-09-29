@@ -26,6 +26,11 @@ contacted:
 npm run import -- --with-history
 ```
 
+> **Reachable by anyone but you?** Set `AUTH_USERNAME` and `AUTH_PASSWORD` in
+> `.env.local` and the app requires a sign-in before any page or API route
+> responds. Leave them unset and there is no login at all — fine on localhost,
+> reckless anywhere else, since the app can send mail from your Gmail.
+
 > **Deploying?** See [DEPLOY.md](DEPLOY.md). This app needs a writable disk and a
 > long-lived process, so it cannot run on Vercel or any other serverless host —
 > not for want of a database driver, but because the scheduler needs a process
@@ -187,6 +192,8 @@ twice.
 scripts/import.ts          papers.json (+ optional sent_log.jsonl) -> SQLite
 scripts/reset.ts           clear send history, with a backup first
 src/lib/db.ts              schema, migrations, default + contact prompts
+src/lib/auth.ts            session signing, edge-safe (WebCrypto only)
+src/middleware.ts          gates every page and API route on a session
 src/lib/models.ts          the selectable models and their tradeoffs
 src/lib/collections.ts     recipient lists: CRUD, bulk add, counts
 src/lib/emails.ts          parse a pasted blob of addresses

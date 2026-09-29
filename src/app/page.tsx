@@ -28,6 +28,7 @@ type Health = {
   openrouter: boolean;
   smtp: boolean;
   smtpAddress: string;
+  auth: boolean;
   dataImported: boolean;
   papers: number;
   recipients: number;
@@ -278,6 +279,15 @@ function Setup({ health }: { health: Health }) {
   if (!health.dataImported) problems.push("No papers imported — run `npm run import`.");
   if (!health.openrouter) problems.push("OPENROUTER_API_KEY missing in .env.local.");
   if (!health.smtp) problems.push("GMAIL_ADDRESS / GMAIL_APP_PASSWORD missing — live sends disabled.");
+  // Worth saying loudly: unauthenticated plus SMTP configured means anyone who
+  // can open this page can send mail from your account.
+  if (!health.auth) {
+    problems.push(
+      health.smtp
+        ? "No login configured (AUTH_USERNAME / AUTH_PASSWORD) — anyone who can reach this page can send real email from your account."
+        : "No login configured (AUTH_USERNAME / AUTH_PASSWORD) — anyone who can reach this page can use the app.",
+    );
+  }
   if (problems.length === 0) return null;
 
   return (

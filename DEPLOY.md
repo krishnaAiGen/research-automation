@@ -220,13 +220,43 @@ serve and funnel handler, after which you can re-add just the one you want.
 ### Making it public, with a password
 
 `serve` is tailnet-only: to anyone outside your tailnet the name does not resolve
-at all. `funnel` publishes the same URL to the internet — but pointed straight at
-the app it is an open relay to your Gmail, because the app has no login. Put a
-password in front first.
+at all. `funnel` publishes the same URL to the internet — and the app must not be
+published without a login, or anyone who finds the URL can send real mail from
+your Gmail.
 
-This needs **no domain, no certbot and no open security-group ports**: Tailscale
-terminates TLS and reaches the instance over its own relays. nginx sits on
-localhost between Funnel and the app.
+**The app has its own login. Use it, and skip nginx entirely.** Set two variables
+in `.env.local`:
+
+```bash
+AUTH_USERNAME=krishna
+AUTH_PASSWORD=<something long>
+```
+
+```bash
+docker compose up -d                   # picks up the new env
+curl -si localhost:3004/api/stats | head -1    # expect 401
+sudo tailscale funnel --bg 3004        # publish the app directly — it guards itself
+sudo tailscale funnel status
+```
+
+Every page redirects to a real sign-in form and every API route answers 401 until
+you are signed in; the session is a signed HttpOnly cookie valid for seven days.
+`/api/health` stays open on purpose so the container's HEALTHCHECK keeps working —
+it exposes counts and a masked sender address, nothing more.
+
+Changing `AUTH_PASSWORD` signs everyone out, because it is also the key the
+session cookie is signed with. Set `AUTH_SECRET` as well if you want the two
+decoupled.
+
+With this there is no nginx, no second password file and no extra port. The rest
+of this section is the older arrangement, kept for the case where you would
+rather not put credentials in the app's environment.
+
+---
+
+The nginx alternative needs **no domain, no certbot and no open security-group
+ports** either: Tailscale terminates TLS and reaches the instance over its own
+relays, with nginx on localhost between Funnel and the app.
 
 If this instance already serves other sites, read
 [Sharing the instance](#sharing-the-instance) first — there are three ways this
