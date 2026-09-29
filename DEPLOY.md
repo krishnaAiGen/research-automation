@@ -131,9 +131,9 @@ ssh -L 3000:localhost:3000 ec2-user@<instance>
 Then open <http://localhost:3000>. This is the right choice for a tool you use
 yourself.
 
-**Option 2 — a password-protected HTTPS URL.** If you want to open it from
-anywhere, put nginx in front. Open 80 and 443 in the security group, leave 3000
-closed, and point a domain at the instance.
+**Option 2 — a password-protected HTTPS URL.** See
+[Putting it on a public URL](#putting-it-on-a-public-url) for the full walkthrough;
+the nginx config itself is here.
 
 ```bash
 sudo dnf install -y nginx httpd-tools           # Amazon Linux 2023
@@ -187,6 +187,79 @@ Backups are just the volume:
 ```bash
 docker compose exec app sh -c 'cd /data && tar cf - app.db' > backup-$(date +%F).tar
 ```
+
+## Putting it on a public URL
+
+You need a **domain you own**. Let's Encrypt refuses by policy to issue for
+`*.compute.amazonaws.com`, so the hostname EC2 hands you cannot have a
+certificate — point your own domain at the instance instead. Any registrar is
+fine; this costs about $10 a year.
+
+Never skip the password step. This app can send mail from your Gmail to thousands
+of people and has no login of its own, so the only thing between a stranger and
+your outbox is what you put in front of it.
+
+**1. Give the instance a fixed address.** Allocate an Elastic IP and associate it
+with the instance. Without one the public IP changes every time the instance
+stops, and DNS silently points at nothing.
+
+**2. Security group.** Inbound:
+
+| Port | Source | Why |
+| --- | --- | --- |
+| 80 | `0.0.0.0/0` | certbot's HTTP challenge, and the redirect to 443 |
+| 443 | `0.0.0.0/0` | the site |
+| 22 | your IP only | admin |
+
+**Port 3000 must not appear in that list.** It is the unauthenticated app; nginx
+reaches it over localhost, nobody else needs to.
+
+**3. DNS.** An `A` record for the name you want — `outreach.your-domain.com` —
+pointing at the Elastic IP. Check it resolves before continuing, because certbot
+fails confusingly if it doesn't:
+
+```bash
+dig +short outreach.your-domain.com     # must print the Elastic IP
+```
+
+**4. nginx with a password.**
+
+```bash
+sudo dnf install -y nginx httpd-tools              # Amazon Linux 2023
+sudo htpasswd -c /etc/nginx/.htpasswd you          # prompts for a password
+```
+
+Write the server block from [Reaching it](#reaching-it) to
+`/etc/nginx/conf.d/research-automation.conf`, with `server_name` set to your
+domain, then:
+
+```bash
+sudo nginx -t && sudo systemctl enable --now nginx
+```
+
+**5. TLS.** certbot edits the config in place to add the certificate and the
+80→443 redirect:
+
+```bash
+sudo dnf install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d outreach.your-domain.com
+sudo certbot renew --dry-run                       # confirms auto-renewal works
+```
+
+The package installs a renewal timer, so this does not need revisiting. Open
+<https://outreach.your-domain.com>, enter the password, and you have the app.
+
+### Without a domain
+
+If you would rather not buy one, use a tunnel instead of opening ports at all.
+[Tailscale](https://tailscale.com) gives the instance an HTTPS name on its
+`ts.net` domain with no inbound ports and no Elastic IP:
+
+- `tailscale serve https / http://127.0.0.1:3000` — reachable from your own
+  devices anywhere, authenticated by Tailscale identity. Better security than a
+  password on an open port, and the right choice if only you use this.
+- `tailscale funnel 443 on` — same URL, but open to the whole internet. If you
+  do that, still put the nginx basic-auth in front of it.
 
 ## Getting recipients onto the server
 
