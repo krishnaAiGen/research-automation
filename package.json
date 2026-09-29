@@ -2,10 +2,13 @@
   "name": "research-automation",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
-    "start": "next start -p 3000",
+    "start": "next start",
     "lint": "next lint",
     "import": "tsx scripts/import.ts",
     "reset": "tsx scripts/reset.ts",

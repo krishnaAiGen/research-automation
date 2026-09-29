@@ -26,6 +26,11 @@ contacted:
 npm run import -- --with-history
 ```
 
+> **Deploying?** See [DEPLOY.md](DEPLOY.md). This app needs a writable disk and a
+> long-lived process, so it cannot run on Vercel or any other serverless host —
+> not for want of a database driver, but because the scheduler needs a process
+> that stays alive. Render, Railway, Fly, or a VPS run it unchanged.
+
 ## Setup
 
 ```bash
