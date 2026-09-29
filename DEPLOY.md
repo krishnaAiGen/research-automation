@@ -148,13 +148,48 @@ command above failed, so re-read its output rather than the status.
 
 ### 5. Open it
 
-**Install Tailscale on the machine you want to browse from** and sign into the
-same account. This is the step people miss: `serve` publishes to your tailnet, so
-without the client the URL will not resolve.
+A successful `serve status` looks like this, and **`(tailnet only)` is the goal,
+not a warning** — it is the whole reason this is safe to leave running:
 
-Then open the `https://<host>.<tailnet>.ts.net` URL from your laptop or phone,
-anywhere in the world. Real certificate, no warnings, nothing exposed to the
-internet.
+```
+https://ip-172-31-30-176.tail14c507.ts.net (tailnet only)
+|-- / proxy http://127.0.0.1:3004
+```
+
+First confirm the app behind the proxy is actually up, or the URL will answer
+502 and look like a Tailscale problem when it isn't:
+
+```bash
+docker compose ps                      # app should be Up
+curl -sf localhost:3004/api/health && echo OK
+```
+
+Then **install Tailscale on the machine you want to browse from** and sign into
+the same account. This is the step people miss: `serve` publishes into your
+tailnet, so without the client the name will not resolve anywhere.
+
+Open the URL from your laptop or phone, anywhere in the world. Real certificate,
+no warnings, nothing exposed to the internet.
+
+**A nicer hostname.** The default name is the instance's internal DNS name. Rename
+the machine and the URL follows:
+
+```bash
+sudo tailscale set --hostname=research-outreach
+sudo tailscale serve status            # now research-outreach.<tailnet>.ts.net
+```
+
+A fresh certificate is issued for the new name on first request, so the first
+load may take a second or two.
+
+**To make it public** (only if someone without Tailscale needs in — and put the
+nginx basic auth from [Reaching it](#reaching-it) in front first):
+
+```bash
+sudo tailscale funnel --bg 3004
+```
+
+**To turn the proxy off:** `sudo tailscale serve --https=443 off`.
 
 ### 6. Configure the app
 
