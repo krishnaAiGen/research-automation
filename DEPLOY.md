@@ -228,21 +228,30 @@ This needs **no domain, no certbot and no open security-group ports**: Tailscale
 terminates TLS and reaches the instance over its own relays. nginx sits on
 localhost between Funnel and the app.
 
+If this instance already serves other sites, read
+[Sharing the instance](#sharing-the-instance) first — there are three ways this
+can disturb them, and one of them is silent.
+
 ```bash
+sudo ss -ltnp | grep 8080                        # must print nothing, or pick another port
 sudo apt-get install -y nginx apache2-utils      # dnf install nginx httpd-tools on Amazon Linux
-sudo htpasswd -c /etc/nginx/.htpasswd you        # prompts for a password
+
+# A file of this app's own. Never `-c` on a shared /etc/nginx/.htpasswd: it
+# truncates, taking every other site's users with it.
+sudo htpasswd -c /etc/nginx/.htpasswd-research you
 ```
 
 The config ships in the repo, so there is nothing to paste — copy it into place:
 
 ```bash
 sudo cp deploy/nginx-funnel.conf /etc/nginx/conf.d/research-automation.conf
-sudo nginx -t
-# `enable --now` will NOT pick up the new config if nginx is already running,
-# which it is: apt-get started it at install time. Restart, don't start.
-sudo systemctl enable nginx && sudo systemctl restart nginx
+sudo nginx -t                                    # never reload on a failed test
+# `reload` re-reads config without dropping connections, so other sites on this
+# nginx keep serving. `enable --now` would be a no-op here: apt-get already
+# started nginx, and starting a running unit does not re-read its config.
+sudo systemctl enable nginx && sudo systemctl reload nginx
 
-sudo ss -ltnp | grep 8080                        # nginx must be listening here
+sudo ss -ltnp | grep 8080                        # nginx must be listening here now
 curl -si localhost:8080/api/health | head -1     # expect 401 — the password is working
 ```
 
@@ -410,11 +419,11 @@ The config ships in the repo as `deploy/nginx-domain.conf`; don't retype it.
 
 ```bash
 sudo apt-get install -y nginx apache2-utils      # dnf install nginx httpd-tools on Amazon Linux
-sudo htpasswd -c /etc/nginx/.htpasswd you        # prompts for a password
+sudo htpasswd -c /etc/nginx/.htpasswd-research you   # this app's own file
 
 sudo cp deploy/nginx-domain.conf /etc/nginx/conf.d/research-automation.conf
 sudo sed -i 's/your.domain/outreach.example.com/' /etc/nginx/conf.d/research-automation.conf
-sudo nginx -t && sudo systemctl enable nginx && sudo systemctl restart nginx
+sudo nginx -t && sudo systemctl enable nginx && sudo systemctl reload nginx
 
 sudo apt-get install -y certbot python3-certbot-nginx   # dnf on Amazon Linux
 sudo certbot --nginx -d outreach.example.com   # adds TLS and the 80->443 redirect
@@ -480,7 +489,7 @@ dig +short outreach.your-domain.com     # must print the Elastic IP
 
 ```bash
 sudo apt-get install -y nginx apache2-utils         # dnf install nginx httpd-tools on Amazon Linux
-sudo htpasswd -c /etc/nginx/.htpasswd you          # prompts for a password
+sudo htpasswd -c /etc/nginx/.htpasswd-research you   # this app's own file
 ```
 
 Write the server block from [Reaching it](#reaching-it) to
@@ -489,9 +498,9 @@ sudo cp deploy/nginx-domain.conf /etc/nginx/conf.d/research-automation.conf
 sudo sed -i 's/your.domain/outreach.your-domain.com/' \
   /etc/nginx/conf.d/research-automation.conf
 sudo nginx -t
-# Restart, not `enable --now`: apt-get already started nginx, and starting an
-# already-running unit does not reload its config.
-sudo systemctl enable nginx && sudo systemctl restart nginx
+# `reload`, not `enable --now`: apt-get already started nginx, and starting a
+# running unit does not re-read its config. Reload keeps other sites serving.
+sudo systemctl enable nginx && sudo systemctl reload nginx
 ```
 
 **5. TLS.** certbot edits the config in place to add the certificate and the
@@ -553,6 +562,50 @@ instead — the full sequence is in
   gives an instant `*.trycloudflare.com` HTTPS URL with no account. Fine for
   showing someone the UI for ten minutes; the URL changes on every restart, so
   it is not a deployment.
+
+## Sharing the instance
+
+If this box already runs other apps, three things here can touch them. The first
+is silent and worth checking straight away.
+
+**1. `htpasswd -c` truncates the file it is given.** If another site already used
+`/etc/nginx/.htpasswd`, running `htpasswd -c /etc/nginx/.htpasswd …` deleted every
+user in it and left only the new one. That is why this app uses its own
+`/etc/nginx/.htpasswd-research`. To check whether the shared file was overwritten:
+
+```bash
+sudo cut -d: -f1 /etc/nginx/.htpasswd     # should list the users you expect
+sudo grep -rl "\.htpasswd" /etc/nginx/    # which sites depend on which file
+```
+
+If it lost users, add them back with `htpasswd` **without** `-c` — the flag is the
+whole problem, and omitting it appends instead.
+
+**2. Reload, never restart.** `systemctl restart nginx` drops every in-flight
+connection on every site it serves. `systemctl reload nginx` re-reads the config
+gracefully and existing requests finish. Always `nginx -t` first: reloading a
+broken config is refused, but *restarting* into one leaves nginx down, and with it
+every other site.
+
+**3. A port clash takes nginx down entirely, not just this app.** If something
+already listens on 8080, nginx fails to bind and the whole service fails to
+start — all sites, not only this one. `nginx -t` will not catch it, because the
+conflict is at bind time. Check first:
+
+```bash
+sudo ss -ltnp | grep -E ':(8080|3004)\s'
+```
+
+If either is taken, change it: `listen 127.0.0.1:<port>` in the config and the
+matching `tailscale funnel --bg <port>`, or `HOST_PORT` for the app itself.
+
+What does **not** interfere: the container (its own network namespace, one
+published port), and Tailscale (it adds an interface and proxies only what you
+point it at — it touches no other app's ports or DNS).
+
+One caveat on the domain route: `certbot --nginx` edits nginx configuration in
+place and may adjust more than your own server block. On a box with other TLS
+sites, take a copy of `/etc/nginx` first.
 
 ## Getting recipients onto the server
 
