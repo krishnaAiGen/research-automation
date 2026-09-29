@@ -23,7 +23,7 @@ In the EC2 console, **Launch instance**:
 
 | Setting | Value | Why |
 | --- | --- | --- |
-| AMI | Amazon Linux 2023 | The `dnf` commands below assume it |
+| AMI | Ubuntu LTS, or Amazon Linux 2023 | Commands for both are given below; the login user differs (`ubuntu` vs `ec2-user`) |
 | Instance type | **t3.small** (2 GiB) | `next build` runs on the instance and will OOM on t3.micro's 1 GiB unless you add swap — see [If the build is killed](#if-the-build-is-killed) |
 | Key pair | create or pick one | You need it to SSH in |
 | Storage | **20 GiB gp3** | The default 8 GiB is too tight: the image alone is ~1.2 GiB before build cache |
@@ -36,10 +36,21 @@ OpenRouter and Gmail. AWS throttles outbound port 25, but this app sends over
 Then connect:
 
 ```bash
-ssh -i /path/to/key.pem ec2-user@<instance-public-ip>
+ssh -i /path/to/key.pem ubuntu@<instance-public-ip>      # ec2-user on Amazon Linux
 ```
 
 ### 2. Install Docker and the compose plugin
+
+**Ubuntu** (login user `ubuntu`):
+
+```bash
+sudo apt-get update
+sudo apt-get install -y docker.io docker-compose-v2 git
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER
+```
+
+**Amazon Linux 2023** (login user `ec2-user`):
 
 ```bash
 sudo dnf install -y docker git
@@ -47,9 +58,9 @@ sudo systemctl enable --now docker
 sudo usermod -aG docker $USER
 ```
 
-`dnf install docker` on Amazon Linux 2023 does **not** include `docker compose`,
-so install the plugin explicitly or every compose command below fails with
-"docker: 'compose' is not a docker command":
+`dnf install docker` does **not** include `docker compose`, and older Ubuntu
+releases have no `docker-compose-v2` package. If `docker compose version` fails
+with "docker: 'compose' is not a docker command", install the plugin by hand:
 
 ```bash
 sudo mkdir -p /usr/local/lib/docker/cli-plugins
@@ -65,7 +76,7 @@ Now log out and back in so the `docker` group applies, then check both:
 
 ```bash
 exit
-ssh -i /path/to/key.pem ec2-user@<instance-public-ip>
+ssh -i /path/to/key.pem <ubuntu|ec2-user>@<instance-public-ip>
 docker ps && docker compose version
 ```
 
@@ -103,15 +114,37 @@ curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up
 ```
 
-That prints a URL. Open it in your browser and sign in; the instance joins your
-tailnet. Then in the [admin console](https://login.tailscale.com/admin/dns)
-under **DNS**, enable **MagicDNS** and **HTTPS Certificates** — `serve` cannot
-issue a certificate without them.
+That prints a URL. Open it and sign in; the instance joins your tailnet.
+
+There are **two separate switches to flip in the admin console**, and each one
+fails with its own confusing message if you skip it:
+
+1. **Serve** — a tailnet feature that is off by default. Without it,
+   `tailscale serve` refuses outright:
+
+   ```
+   Serve is not enabled on your tailnet.
+   To enable, visit: https://login.tailscale.com/f/serve?node=…
+   ```
+
+   Open the link it prints; that is the fastest way, since it is scoped to this
+   node.
+
+2. **MagicDNS** and **HTTPS Certificates** — both under
+   [DNS](https://login.tailscale.com/admin/dns). Without these there is no name
+   to issue a certificate for, so `serve` cannot terminate TLS.
+
+Then point it at the **host port, 3004** — not 3000. 3000 is what the app
+listens on *inside* the container; the host publishes it on 3004, and `serve`
+proxies from the host:
 
 ```bash
 sudo tailscale serve --bg 3004
 sudo tailscale serve status        # prints your https://<host>.<tailnet>.ts.net URL
 ```
+
+`No serve config` from `status` means nothing was registered — the `serve`
+command above failed, so re-read its output rather than the status.
 
 ### 5. Open it
 
@@ -254,7 +287,7 @@ The walkthrough uses Tailscale, which needs no open port at all. Two alternative
 and forward the port:
 
 ```bash
-ssh -L 3004:localhost:3004 ec2-user@<instance>
+ssh -L 3004:localhost:3004 ubuntu@<instance>
 ```
 
 Then open <http://localhost:3004>.
@@ -264,7 +297,7 @@ Then open <http://localhost:3004>.
 The server block itself:
 
 ```bash
-sudo dnf install -y nginx httpd-tools           # Amazon Linux 2023
+sudo apt-get install -y nginx apache2-utils      # dnf install nginx httpd-tools on Amazon Linux
 sudo htpasswd -c /etc/nginx/.htpasswd you       # prompts for a password
 ```
 
@@ -294,7 +327,7 @@ server {
 
 ```bash
 sudo nginx -t && sudo systemctl enable --now nginx
-sudo dnf install -y certbot python3-certbot-nginx
+sudo apt-get install -y certbot python3-certbot-nginx   # dnf on Amazon Linux
 sudo certbot --nginx -d your.domain            # adds TLS and the 80->443 redirect
 ```
 
@@ -357,7 +390,7 @@ dig +short outreach.your-domain.com     # must print the Elastic IP
 **4. nginx with a password.**
 
 ```bash
-sudo dnf install -y nginx httpd-tools              # Amazon Linux 2023
+sudo apt-get install -y nginx apache2-utils         # dnf install nginx httpd-tools on Amazon Linux
 sudo htpasswd -c /etc/nginx/.htpasswd you          # prompts for a password
 ```
 
@@ -373,7 +406,7 @@ sudo nginx -t && sudo systemctl enable --now nginx
 80→443 redirect:
 
 ```bash
-sudo dnf install -y certbot python3-certbot-nginx
+sudo apt-get install -y certbot python3-certbot-nginx   # dnf on Amazon Linux
 sudo certbot --nginx -d outreach.your-domain.com
 sudo certbot renew --dry-run                       # confirms auto-renewal works
 ```
@@ -454,7 +487,7 @@ newest rows:
 ```bash
 # on your laptop
 sqlite3 data/app.db 'PRAGMA wal_checkpoint(TRUNCATE);'
-scp data/app.db ec2-user@<instance>:/tmp/app.db
+scp data/app.db ubuntu@<instance>:/tmp/app.db
 
 # on the instance
 cd research-automation
