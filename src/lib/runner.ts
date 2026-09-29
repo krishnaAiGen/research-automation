@@ -1,6 +1,6 @@
 import { db } from "./db";
-import { generateQueries } from "./openrouter";
-import { renderEmail, authorFirstName } from "./render";
+import { generateEmail } from "./openrouter";
+import { renderEmail } from "./render";
 import { Mailer, smtpCredsFromEnv } from "./mailer";
 import type { Campaign, PromptConfig, QueueItem } from "./types";
 
@@ -119,8 +119,6 @@ function recordSend(row: {
   paperId: string | null;
   email: string;
   subject: string;
-  topic: string;
-  queries: string[];
   body: string;
   status: "sent" | "failed" | "dry";
   error?: string | null;
@@ -128,14 +126,12 @@ function recordSend(row: {
   db.prepare(
     `INSERT INTO sends (campaign_id, paper_id, email, subject, topic, queries, body,
                         status, error, source, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'app', ?)`,
+     VALUES (?, ?, ?, ?, '', '[]', ?, ?, ?, 'app', ?)`,
   ).run(
     row.campaignId,
     row.paperId,
     row.email,
     row.subject,
-    row.topic,
-    JSON.stringify(row.queries),
     row.body,
     row.status,
     row.error ?? null,
@@ -242,26 +238,21 @@ async function execute(state: RunState, apiKey: string) {
         continue;
       }
 
-      const authors: string[] = safeParse(item.authors ?? "[]");
-      const title = item.title ?? "";
+      // The conference and sender sides come from the config; the recipient
+      // side is this row. Hand-added contacts carry their research area in
+      // `notes`; scraped authors leave it empty and the prompt says to omit.
       const recipients = campaign.test_recipient ? [campaign.test_recipient] : [item.email];
 
-      let topic = "";
-      let queries: string[] = [];
-      let greeting = "";
+      let subject = "";
+      let body = "";
       try {
-        const gen = await generateQueries(apiKey, cfg, {
-          title,
-          abstract: item.abstract ?? "",
-          authors,
+        const gen = await generateEmail(apiKey, cfg, {
           recipient: item.email,
           name: item.name,
           notes: item.notes,
         });
-        topic = gen.topic;
-        queries = gen.queries;
-        // A name typed by hand beats one the model inferred from the address.
-        greeting = item.name.trim() || gen.name || authorFirstName(authors);
+        subject = gen.subject;
+        body = gen.body;
       } catch (err) {
         if (state.abort.signal.aborted) break;
         recordSend({
@@ -269,18 +260,26 @@ async function execute(state: RunState, apiKey: string) {
           paperId: item.paper_id,
           email: item.email,
           subject: "",
-          topic: "",
-          queries: [],
           body: "",
           status: "failed",
-          error: `queries: ${String((err as Error)?.message ?? err)}`,
+          error: `draft: ${String((err as Error)?.message ?? err)}`,
         });
         db.prepare("UPDATE campaigns SET failed = failed + 1 WHERE id = ?").run(campaignId);
         processed++;
         continue;
       }
 
-      const { subject, body } = renderEmail(cfg, title, greeting, topic, queries);
+      // A reply with no usable body falls back to the config's template so the
+      // recipient still gets a complete, factually correct email.
+      if (!body.trim()) {
+        const fallback = renderEmail(cfg, {
+          email: item.email,
+          name: item.name,
+          researchArea: item.notes,
+        });
+        subject = subject || fallback.subject;
+        body = fallback.body;
+      }
 
       if (!live) {
         recordSend({
@@ -288,8 +287,6 @@ async function execute(state: RunState, apiKey: string) {
           paperId: item.paper_id,
           email: item.email,
           subject,
-          topic,
-          queries,
           body,
           status: "dry",
         });
@@ -302,8 +299,6 @@ async function execute(state: RunState, apiKey: string) {
             paperId: item.paper_id,
             email: item.email,
             subject,
-            topic,
-            queries,
             body,
             status: "sent",
           });
@@ -314,8 +309,6 @@ async function execute(state: RunState, apiKey: string) {
             paperId: item.paper_id,
             email: item.email,
             subject,
-            topic,
-            queries,
             body,
             status: "failed",
             error: `send: ${String((err as Error)?.message ?? err)}`,
@@ -358,15 +351,6 @@ async function execute(state: RunState, apiKey: string) {
   } finally {
     mailer?.close();
     runs.delete(campaignId);
-  }
-}
-
-function safeParse(json: string): string[] {
-  try {
-    const v = JSON.parse(json);
-    return Array.isArray(v) ? v.map(String) : [];
-  } catch {
-    return [];
   }
 }
 

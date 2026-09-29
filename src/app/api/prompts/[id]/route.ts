@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, CONFERENCE_FIELDS } from "@/lib/db";
 import type { PromptConfig } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +14,10 @@ export async function PUT(req: Request, { params }: Ctx) {
     | undefined;
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  const conference = Object.fromEntries(
+    CONFERENCE_FIELDS.map((f) => [f, body[f] ?? existing[f]]),
+  ) as Record<(typeof CONFERENCE_FIELDS)[number], string>;
+
   const merged = {
     name: body.name ?? existing.name,
     model: body.model ?? existing.model,
@@ -23,11 +27,13 @@ export async function PUT(req: Request, { params }: Ctx) {
     template: body.template ?? existing.template,
     product_url: body.product_url ?? existing.product_url,
     demo_url: body.demo_url ?? existing.demo_url,
+    ...conference,
   };
 
   db.prepare(
     `UPDATE prompt_configs SET name=?, model=?, reasoning=?, system_prompt=?,
-       user_prompt=?, template=?, product_url=?, demo_url=?, updated_at=? WHERE id=?`,
+       user_prompt=?, template=?, product_url=?, demo_url=?,
+       ${CONFERENCE_FIELDS.map((f) => `${f}=?`).join(", ")}, updated_at=? WHERE id=?`,
   ).run(
     merged.name,
     merged.model,
@@ -37,6 +43,7 @@ export async function PUT(req: Request, { params }: Ctx) {
     merged.template,
     merged.product_url,
     merged.demo_url,
+    ...CONFERENCE_FIELDS.map((f) => merged[f]),
     new Date().toISOString(),
     id,
   );

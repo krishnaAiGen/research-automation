@@ -2,17 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { Card, Field, Toast, Badge } from "@/components/ui";
-import { MODEL_CHOICES, QUERIES_PER_EMAIL } from "@/lib/models";
+import { MODEL_CHOICES } from "@/lib/models";
 import type { PromptConfig } from "@/lib/types";
 
 type Preview = {
   paper: { id: string; title: string; track: string; authors: string[]; recipient: string; abstract: string };
   resolvedUserPrompt: string;
-  topic: string;
-  queries: string[];
   greeting: string;
   subject: string;
   body: string;
+  source: "model" | "template";
   modelError: string | null;
 };
 
@@ -131,29 +130,17 @@ export default function PromptPage() {
 
   if (!draft) return <p style={{ color: "var(--text-muted)" }}>Loading…</p>;
 
-  // Distinct {query N} lines in the template. The model always writes
-  // QUERIES_PER_EMAIL of them, so a template with a different number of slots
-  // either wastes generated queries or has slot lines stripped from the email.
-  const querySlots = new Set(
-    [...draft.template.matchAll(/\{query (\d+)\}/g)].map((m) => Number(m[1])),
-  ).size;
-  const slotMismatch =
-    querySlots === QUERIES_PER_EMAIL
-      ? null
-      : querySlots < QUERIES_PER_EMAIL
-        ? `${QUERIES_PER_EMAIL - querySlots} of the ${QUERIES_PER_EMAIL} generated queries will be thrown away — this template has only ${querySlots} {query N} line${querySlots === 1 ? "" : "s"}.`
-        : `${querySlots - QUERIES_PER_EMAIL} {query N} line${querySlots - QUERIES_PER_EMAIL === 1 ? "" : "s"} will be dropped from the email — only ${QUERIES_PER_EMAIL} queries are generated.`;
-
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Email prompt</h1>
           <p className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
-            The model turns each paper into a topic, research queries, and a greeting name. The
-            template turns those into the email that gets sent. Keep as many configurations as you
-            like — every batch and schedule picks the one it wants, so a hand-built recipient list
-            can have its own without touching this one.
+            The model drafts each recipient a short conference announcement, personalized to their
+            research area. The conference and sender details below are the fixed facts it works
+            from — recipients come from the target collection. Keep as many configurations as you
+            like — every batch and schedule picks the one it wants, so a different conference can
+            have its own.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -263,10 +250,122 @@ export default function PromptPage() {
             </div>
           </Card>
 
-          <Card title="System prompt" subtitle="How the model is told to think about each paper">
+          <Card
+            title="Conference details"
+            subtitle="Fixed facts every drafted email works from. Empty fields are omitted, never invented."
+          >
+            <div className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Conference name">
+                  <input
+                    className="field"
+                    value={draft.conference_name}
+                    onChange={(e) => set("conference_name", e.target.value)}
+                  />
+                </Field>
+                <Field label="Website">
+                  <input
+                    className="field"
+                    value={draft.conference_website}
+                    onChange={(e) => set("conference_website", e.target.value)}
+                  />
+                </Field>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Dates">
+                  <input
+                    className="field"
+                    value={draft.conference_dates}
+                    onChange={(e) => set("conference_dates", e.target.value)}
+                  />
+                </Field>
+                <Field label="Location">
+                  <input
+                    className="field"
+                    value={draft.conference_location}
+                    onChange={(e) => set("conference_location", e.target.value)}
+                  />
+                </Field>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Field label="Submission deadline">
+                  <input
+                    className="field"
+                    value={draft.submission_deadline}
+                    onChange={(e) => set("submission_deadline", e.target.value)}
+                  />
+                </Field>
+                <Field label="Notification date">
+                  <input
+                    className="field"
+                    value={draft.notification_date}
+                    onChange={(e) => set("notification_date", e.target.value)}
+                  />
+                </Field>
+                <Field label="Camera-ready deadline">
+                  <input
+                    className="field"
+                    value={draft.camera_ready_deadline}
+                    onChange={(e) => set("camera_ready_deadline", e.target.value)}
+                  />
+                </Field>
+              </div>
+              <Field label="Topics / tracks">
+                <input
+                  className="field"
+                  value={draft.conference_topics}
+                  onChange={(e) => set("conference_topics", e.target.value)}
+                />
+              </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Keynote speakers">
+                  <input
+                    className="field"
+                    value={draft.keynote_speakers}
+                    onChange={(e) => set("keynote_speakers", e.target.value)}
+                  />
+                </Field>
+                <Field label="Organizers">
+                  <input
+                    className="field"
+                    value={draft.organizers}
+                    onChange={(e) => set("organizers", e.target.value)}
+                  />
+                </Field>
+              </div>
+            </div>
+          </Card>
+
+          <Card title="Sender" subtitle="Who the email appears to come from">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="Name">
+                <input
+                  className="field"
+                  value={draft.sender_name}
+                  onChange={(e) => set("sender_name", e.target.value)}
+                />
+              </Field>
+              <Field label="Affiliation">
+                <input
+                  className="field"
+                  value={draft.sender_affiliation}
+                  onChange={(e) => set("sender_affiliation", e.target.value)}
+                />
+              </Field>
+              <Field label="Role">
+                <input
+                  className="field"
+                  value={draft.sender_role}
+                  onChange={(e) => set("sender_role", e.target.value)}
+                />
+              </Field>
+            </div>
+          </Card>
+
+          <Card title="System prompt" subtitle="How the model is told to draft each email">
             <textarea
               className="field"
-              rows={16}
+              rows={10}
               value={draft.system_prompt}
               onChange={(e) => set("system_prompt", e.target.value)}
             />
@@ -274,11 +373,11 @@ export default function PromptPage() {
 
           <Card
             title="User prompt"
-            subtitle="Sent per paper. Placeholders are substituted before the call."
+            subtitle="Sent per recipient. Conference, sender, and recipient fields are substituted before the call."
           >
             <textarea
               className="field"
-              rows={12}
+              rows={22}
               value={draft.user_prompt}
               onChange={(e) => set("user_prompt", e.target.value)}
             />
@@ -286,19 +385,14 @@ export default function PromptPage() {
 
           <Card
             title="Email template"
-            subtitle={`A leading 'Subject:' line sets the subject. The model writes ${QUERIES_PER_EMAIL} research queries, which fill the {query 1}…{query ${QUERIES_PER_EMAIL}} lines.`}
+            subtitle="A leading 'Subject:' line sets the subject. Used as-is when the model is not called, and as the fallback draft."
           >
             <textarea
               className="field"
-              rows={22}
+              rows={16}
               value={draft.template}
               onChange={(e) => set("template", e.target.value)}
             />
-            {slotMismatch && (
-              <p className="mt-2 text-xs" style={{ color: "var(--warning)" }}>
-                {slotMismatch}
-              </p>
-            )}
           </Card>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -338,7 +432,7 @@ export default function PromptPage() {
                   className="btn btn-primary"
                   onClick={() => runPreview(true, Boolean(preview))}
                   disabled={busy?.startsWith("preview")}
-                  title="Calls the model for real queries"
+                  title="Calls the model for a real draft"
                 >
                   {busy === "preview-live" ? "Generating…" : "Generate with model"}
                 </button>
@@ -368,7 +462,8 @@ export default function PromptPage() {
 
                 <div className="text-xs" style={{ color: "var(--text-secondary)" }}>
                   <span className="font-medium">Greeting:</span> {preview.greeting} ·{" "}
-                  <span className="font-medium">Topic:</span> {preview.topic}
+                  <span className="font-medium">Drafted by:</span>{" "}
+                  {preview.source === "model" ? "model" : "template"}
                 </div>
 
                 <div>

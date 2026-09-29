@@ -53,6 +53,20 @@ export type PromptConfig = {
   template: string;
   product_url: string;
   demo_url: string;
+  /* Conference details, fixed per configuration and rendered verbatim. */
+  conference_name: string;
+  conference_website: string;
+  conference_dates: string;
+  conference_location: string;
+  submission_deadline: string;
+  notification_date: string;
+  camera_ready_deadline: string;
+  conference_topics: string;
+  keynote_speakers: string;
+  organizers: string;
+  sender_name: string;
+  sender_affiliation: string;
+  sender_role: string;
   created_at: string;
   updated_at: string;
 };

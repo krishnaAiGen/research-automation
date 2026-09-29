@@ -2,39 +2,54 @@ import type { PromptConfig } from "./types";
 
 export type RenderedEmail = { subject: string; body: string };
 
+/** The recipient-side inputs a template may reference. */
+export type RenderContext = {
+  email: string;
+  name: string;
+  /** The recipient's research area — the notes field on hand-added contacts. */
+  researchArea: string;
+};
+
+/** The recipient's given name, or the neutral fallback the prompts specify. */
+export function firstName(name: string): string {
+  const first = name.trim().split(/\s+/)[0] ?? "";
+  return first || "Researcher";
+}
+
 /**
- * Fill the template placeholders. Mirrors the Python renderer exactly:
- *   {topic} {First Name} {Paper Title} {query 1..N}
- *   {product link: ...} / {demo link: ...}  -> configured URLs
- * A leading "Subject: ..." line sets the subject and is stripped from the body.
+ * Fill the template placeholders. The conference and sender fields come from
+ * the configuration; the recipient side comes from the queue row. A leading
+ * "Subject: ..." line sets the subject and is stripped from the body.
+ * Unset fields render empty — the prompt tells the model to omit missing
+ * details, and the template stays honest the same way.
  */
-export function renderEmail(
-  cfg: PromptConfig,
-  title: string,
-  firstName: string,
-  topic: string,
-  queries: string[],
-): RenderedEmail {
-  const topicText = topic || title;
-  let filled = cfg.template
-    .replaceAll("{topic}", topicText)
-    .replaceAll("{First Name}", firstName || "there")
-    .replaceAll("{Paper Title}", title);
+export function renderEmail(cfg: PromptConfig, ctx: RenderContext): RenderedEmail {
+  const values: Record<string, string> = {
+    conference_name: cfg.conference_name,
+    conference_website: cfg.conference_website,
+    conference_dates: cfg.conference_dates,
+    conference_location: cfg.conference_location,
+    submission_deadline: cfg.submission_deadline,
+    notification_date: cfg.notification_date,
+    camera_ready_deadline: cfg.camera_ready_deadline,
+    conference_topics: cfg.conference_topics,
+    keynote_speakers: cfg.keynote_speakers,
+    organizers: cfg.organizers,
+    sender_name: cfg.sender_name,
+    sender_affiliation: cfg.sender_affiliation,
+    sender_role: cfg.sender_role,
+    recipient_name: ctx.name,
+    recipient_email: ctx.email,
+    recipient_research_area: ctx.researchArea,
+    first_name: firstName(ctx.name),
+  };
 
-  queries.forEach((q, i) => {
-    filled = filled.replaceAll(`{query ${i + 1}}`, q);
-  });
+  let filled = cfg.template;
+  for (const [key, value] of Object.entries(values)) {
+    filled = filled.replaceAll(`{{${key}}}`, value);
+  }
 
-  filled = filled.replace(/\{product link:[^}]*\}/g, cfg.product_url);
-  filled = filled.replace(/\{demo link:[^}]*\}/g, cfg.demo_url);
-
-  // Drop leftover {query N} lines when the model returned fewer than N.
-  filled = filled
-    .split("\n")
-    .filter((line) => !/\{query \d+\}/.test(line))
-    .join("\n");
-
-  let subject = `Impressed by your paper on ${topicText}`;
+  let subject = cfg.conference_name ? `Invitation: ${cfg.conference_name}` : "Conference invitation";
   const lines = filled.split("\n");
   if (lines.length > 0 && lines[0].toLowerCase().startsWith("subject:")) {
     subject = lines[0].slice(lines[0].indexOf(":") + 1).trim();
@@ -42,10 +57,4 @@ export function renderEmail(
   }
 
   return { subject, body: filled };
-}
-
-export function authorFirstName(authors: string[]): string {
-  const first = authors[0]?.trim();
-  if (!first) return "there";
-  return first.split(/\s+/)[0] || "there";
 }

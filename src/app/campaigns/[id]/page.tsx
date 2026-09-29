@@ -9,12 +9,10 @@ type SendRow = {
   id: number;
   email: string;
   subject: string;
-  topic: string;
   status: string;
   error: string | null;
   created_at: string;
   body: string;
-  queries: string;
   title: string | null;
 };
 

@@ -7,128 +7,74 @@ const DATA_DIR = path.join(process.cwd(), "data");
 const DB_PATH = process.env.DATABASE_PATH || path.join(DATA_DIR, "app.db");
 
 // --------------------------------------------------------------------------
-// Default prompt config — the exact prompt + template the Python sender used.
+// Default prompt config — conference announcement emails. The conference and
+// sender details are fixed per configuration (edited on the Email prompt
+// page); the recipient comes from each row of the target collection.
 // Declared before `db` because the first-run seed reads them during migrate().
 // --------------------------------------------------------------------------
-export const DEFAULT_SYSTEM_PROMPT = `You draft natural-language research queries for an AI literature-research assistant (CCRI Taiwan). Given a paper's title and abstract, you write queries the paper's author could paste into CCRI Taiwan to explore the literature around their own work.
+export const DEFAULT_SYSTEM_PROMPT = `You draft concise, professional emails to researchers informing them about relevant academic conferences. Given conference details and recipient information, write a short personalized email that explains why the conference may interest them and includes key dates, location, submission deadline, and website. Do not invent details; use only the supplied fields. Keep the tone respectful, non-spammy, and under 150 words. If the recipient's first name can be inferred from their name or email, use it; otherwise use "Researcher". Return only the email subject and body.`;
 
-Each query is a natural-language research request — the kind a researcher types to a smart research assistant — but SHORT: roughly 5-15 words each, one sentence, no filler. Each must ask for something genuinely useful and DISTINCT in shape. Aim for a mix of these shapes:
-  1. Progress / trend over a time window (e.g. 'in the last two years').
-  2. Gap analysis across the literature, often asking to categorize or tabulate findings.
-  3. A methodology / comparison question, optionally filtered to top venues (e.g. 'from A* conferences only').
+export const DEFAULT_USER_PROMPT = `Conference details:
+- Name: {{conference_name}}
+- Website: {{conference_website}}
+- Dates: {{conference_dates}}
+- Location: {{conference_location}}
+- Submission deadline: {{submission_deadline}}
+- Notification date: {{notification_date}}
+- Camera-ready deadline: {{camera_ready_deadline}}
+- Topics/tracks: {{conference_topics}}
+- Keynote speakers: {{keynote_speakers}}
+- Organizers: {{organizers}}
 
-Ground every query in the SPECIFIC methods, problems, and domain of THIS paper, using its real terminology — do not invent unrelated topics.
+Recipient:
+- Name: {{recipient_name}}
+- Email: {{recipient_email}}
+- Research area: {{recipient_research_area}}
 
-Study these examples for a paper on FEDERATED LEARNING (imitate the style and BREVITY, not the subject):
-  - "Progress on data-poisoning attacks in federated learning, last two years?"
-  - "Gaps in federated-learning poisoning defenses, in a table."
-  - "How is non-IID heterogeneity handled in federated learning? A* venues only."
+Sender:
+- Name: {{sender_name}}
+- Affiliation: {{sender_affiliation}}
+- Role: {{sender_role}}
 
-Also produce a short 'topic' phrase (3-6 words) naming what the paper is about, suitable for an email subject line.
+Write a short conference announcement email. Personalize the opening to the recipient's research area. Include the conference name, dates, location, submission deadline, and website. Add one clear call to action: submit a paper or register. Avoid exaggerated claims. Max 150 words. If a field is missing, omit it rather than inventing it. Return subject and body only.`;
 
-Finally, you are given the paper's author list and the ONE recipient email the message will be sent to. Work out which author that address most likely belongs to by matching the email's local part and domain against the authors' names (e.g. 'maruyama@i.h.kyoto-u.ac.jp' -> 'Kenji Maruyama'; 'jsmith@mit.edu' -> 'John Smith'; 'y.chen2@...' -> 'Yang Chen'), and return that author's FIRST name (given name only) as 'name' for the 'Hi {name},' greeting. If the email gives no usable hint, fall back to the FIRST author's first name. NEVER invent a name that is not in the author list.`;
+export const DEFAULT_TEMPLATE = `Subject: Invitation: {{conference_name}} — {{conference_dates}} in {{conference_location}}
 
-export const DEFAULT_USER_PROMPT = `Paper title: {{title}}
+Hi {{first_name}},
 
-Abstract:
-{{abstract}}
+I’m reaching out because your work in {{recipient_research_area}} seems relevant to {{conference_name}}. We’d love for you to consider submitting or attending.
 
-Authors (in order):
-{{authors}}
+{{conference_name}} will be held {{conference_dates}} in {{conference_location}}. The submission deadline is {{submission_deadline}}, and topics include {{conference_topics}}.
 
-Recipient email (the person to greet): {{recipient}}
+You can find details and submit here: {{conference_website}}.
 
-Write exactly {{count}} SHORT natural-language research queries (roughly 5-15 words each, one sentence) in the style of the examples, each a distinct shape, all grounded in this paper's actual topic and terminology.
-Also set 'name' to the first name of the author who owns the recipient email (fall back to the first author if the email gives no hint).
-Respond with ONLY a JSON object of the form {"topic": "...", "queries": ["...", "..."], "name": "..."} and nothing else.`;
-
-export const DEFAULT_TEMPLATE = `Subject: Impressed by your ICML paper on {topic}
-
-Hi {First Name},
-
-Congrats on your ICML paper, {Paper Title} — really nice work.
-
-I know that doing research takes weeks of literature review, brainstorming, and writing.
-We understood this pain and built CCRI Taiwan to make the entire research process faster and more efficient.
-CCRI Taiwan has three modes:
-
-- Research: AI-assisted literature review
-- Write: an AI LaTeX compiler that drafts and writes your paper
-- Review: human-level critique of your draft before you submit
-
-Based on your paper, a few Research queries to try:
-
-- {query 1}
-- {query 2}
-- {query 3}
-
-Try one in Research mode at {product link: your site} ({demo link: your demo}) — Write and Review modes are right there too.
-
-No pressure — if it's not useful, just say so.
+Would this be of interest? If not, feel free to ignore this note.
 
 Best,
-[YOUR NAME — edit this on the Email prompt page]
-CCRI Taiwan`;
+{{sender_name}}
+{{sender_affiliation}}
+{{conference_name}}`;
 
 /** Placeholders, not guesses — set the real URLs on the Email prompt page. */
 export const DEFAULT_PRODUCT_URL = "[SET PRODUCT URL]";
 export const DEFAULT_DEMO_URL = "[SET DEMO URL]";
 
-// --------------------------------------------------------------------------
-// Starter prompt for a hand-built collection. Those addresses have no paper,
-// so {{title}} / {{abstract}} / {{authors}} all render empty and the paper
-// prompt above produces "Congrats on your paper,  —". This one works from the
-// notes typed in alongside the address instead.
-// --------------------------------------------------------------------------
-export const CONTACT_SYSTEM_PROMPT = `You draft natural-language research queries for an AI literature-research assistant (CCRI Taiwan). You are given one contact — an email address, optionally a name, and a short free-text note about what they work on — and you write queries that person could paste into CCRI Taiwan to explore the literature around their own field.
-
-Each query is a natural-language research request — the kind a researcher types to a smart research assistant — but SHORT: roughly 5-15 words each, one sentence, no filler. Each must ask for something genuinely useful and DISTINCT in shape. Aim for a mix of these shapes:
-  1. Progress / trend over a time window (e.g. 'in the last two years').
-  2. Gap analysis across the literature, often asking to categorize or tabulate findings.
-  3. A methodology / comparison question, optionally filtered to top venues (e.g. 'from A* conferences only').
-
-Ground every query in the field named in the note, using its real terminology. If the note is empty, infer the broadest plausible field from the email domain and keep the queries general rather than inventing a specialty the person may not have.
-
-Also produce a short 'topic' phrase (3-6 words) naming their field, suitable for an email subject line.
-
-Finally, return the contact's FIRST name as 'name' for the 'Hi {name},' greeting: use the supplied name if there is one, otherwise infer a plausible given name from the email's local part (e.g. 'jsmith@mit.edu' -> 'John' is a GUESS and should be avoided — prefer returning an empty string so the template falls back to a neutral greeting). Never invent a surname.`;
-
-export const CONTACT_USER_PROMPT = `Contact email: {{recipient}}
-Name (may be blank): {{name}}
-Notes on what they work on (may be blank): {{notes}}
-
-Write exactly {{count}} SHORT natural-language research queries (roughly 5-15 words each, one sentence), each a distinct shape, all grounded in the field above.
-Set 'topic' to a 3-6 word phrase naming that field.
-Set 'name' to the contact's given name, or "" if you cannot know it.
-Respond with ONLY a JSON object of the form {"topic": "...", "queries": ["...", "..."], "name": "..."} and nothing else.`;
-
-export const CONTACT_TEMPLATE = `Subject: A few research queries on {topic}
-
-Hi {First Name},
-
-I came across your work on {topic} and thought this might be useful.
-
-I know that doing research takes weeks of literature review, brainstorming, and writing.
-We understood this pain and built CCRI Taiwan to make the entire research process faster and more efficient.
-CCRI Taiwan has three modes:
-
-- Research: AI-assisted literature review
-- Write: an AI LaTeX compiler that drafts and writes your paper
-- Review: human-level critique of your draft before you submit
-
-A few Research queries to try:
-
-- {query 1}
-- {query 2}
-- {query 3}
-
-Try one in Research mode at {product link: your site} ({demo link: your demo}) — Write and Review modes are right there too.
-
-No pressure — if it's not useful, just say so.
-
-Best,
-[YOUR NAME — edit this on the Email prompt page]
-CCRI Taiwan`;
+/** The per-configuration conference and sender fields, in insert order. */
+export const CONFERENCE_FIELDS = [
+  "conference_name",
+  "conference_website",
+  "conference_dates",
+  "conference_location",
+  "submission_deadline",
+  "notification_date",
+  "camera_ready_deadline",
+  "conference_topics",
+  "keynote_speakers",
+  "organizers",
+  "sender_name",
+  "sender_affiliation",
+  "sender_role",
+] as const;
 
 // Next dev reloads modules on every edit; without a global handle each reload
 // opens another connection to the same file and they fight over the write lock.
@@ -300,6 +246,12 @@ function migrate(db: Database.Database) {
   // overriding a choice; it just stops a stale value from looking meaningful.
   dropColumn(db, "prompt_configs", "query_count");
 
+  // Conference-announcement configs carry the conference and sender details
+  // as fixed fields on the configuration; recipients supply name/email/notes.
+  for (const column of CONFERENCE_FIELDS) {
+    addColumn(db, "prompt_configs", column, "TEXT NOT NULL DEFAULT ''");
+  }
+
   // Deliberately no "move old defaults forward" step for the model: every
   // entry in MODEL_CHOICES is something the user can pick, so rewriting one on
   // startup would silently undo their choice. DEFAULT_MODEL is for new rows.
@@ -313,7 +265,16 @@ function hasColumn(db: Database.Database, table: string, column: string): boolea
 
 function addColumn(db: Database.Database, table: string, column: string, decl: string) {
   if (hasColumn(db, table, column)) return;
-  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+  // `next build` collects page data with several workers at once, each running
+  // migrate() on its own connection; two workers can both pass the check above
+  // before either has altered the table. A concurrent duplicate is the race
+  // resolving itself, so only that specific error is swallowed.
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+  } catch (err) {
+    const text = String((err as Error)?.message ?? err);
+    if (!/duplicate column name/i.test(text)) throw err;
+  }
 }
 
 function dropColumn(db: Database.Database, table: string, column: string) {
@@ -406,7 +367,7 @@ function seedPromptConfig(db: Database.Database) {
        template, product_url, demo_url, created_at, updated_at)
      VALUES (?, 1, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
-    "CCRI Taiwan outreach (default)",
+    "Conference announcement (default)",
     DEFAULT_MODEL,
     DEFAULT_SYSTEM_PROMPT,
     DEFAULT_USER_PROMPT,

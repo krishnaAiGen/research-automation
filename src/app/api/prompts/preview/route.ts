@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { generateQueries, buildUserPrompt } from "@/lib/openrouter";
-import { QUERIES_PER_EMAIL } from "@/lib/models";
-import { renderEmail, authorFirstName } from "@/lib/render";
+import { generateEmail, buildUserPrompt } from "@/lib/openrouter";
+import { renderEmail, firstName } from "@/lib/render";
 import type { PromptConfig } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -20,8 +19,8 @@ type PaperRow = {
 /**
  * Render one email from the config in the request body — which may be unsaved,
  * so the editor can preview edits before committing them. `live: true` calls
- * the model for real queries; otherwise placeholders stand in and nothing is
- * spent.
+ * the model to draft the email; otherwise the template is rendered as-is so
+ * nothing is spent.
  */
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
@@ -38,7 +37,7 @@ export async function POST(req: Request) {
       : db
           .prepare(
             `SELECT id, title, abstract, authors, emails, track FROM papers
-              WHERE length(trim(abstract)) > 0 AND emails <> '[]'
+              WHERE emails <> '[]'
               ORDER BY RANDOM() LIMIT 1`,
           )
           .get()
@@ -49,10 +48,17 @@ export async function POST(req: Request) {
   const authors: string[] = safeParse(paper.authors);
   const emails: string[] = safeParse(paper.emails);
   const recipient = emails[0] ?? "";
+  // The preview stands in for a real queue row: the first author plays the
+  // recipient and the paper's track plays their research area.
+  const ctx = {
+    recipient,
+    name: authors[0] ?? "",
+    notes: paper.track,
+  };
 
-  let topic = "";
-  let queries: string[] = [];
-  let greeting = "";
+  let subject = "";
+  let emailBody = "";
+  let source: "model" | "template" = "template";
   let modelError: string | null = null;
 
   if (body.live) {
@@ -64,30 +70,24 @@ export async function POST(req: Request) {
       );
     }
     try {
-      const gen = await generateQueries(apiKey, cfg, {
-        title: paper.title,
-        abstract: paper.abstract,
-        authors,
-        recipient,
-      });
-      topic = gen.topic;
-      queries = gen.queries;
-      greeting = gen.name || authorFirstName(authors);
+      const gen = await generateEmail(apiKey, cfg, ctx);
+      subject = gen.subject;
+      emailBody = gen.body;
+      source = "model";
     } catch (err) {
       modelError = String((err as Error)?.message ?? err);
     }
   }
 
-  if (!body.live || modelError) {
-    topic = topic || "[topic from the model]";
-    greeting = greeting || authorFirstName(authors);
-    queries =
-      queries.length > 0
-        ? queries
-        : Array.from({ length: QUERIES_PER_EMAIL }, (_, i) => `[research query ${i + 1}]`);
+  if (source === "template") {
+    const rendered = renderEmail(cfg, {
+      email: recipient,
+      name: ctx.name,
+      researchArea: ctx.notes,
+    });
+    subject = rendered.subject;
+    emailBody = rendered.body;
   }
-
-  const { subject, body: emailBody } = renderEmail(cfg, paper.title, greeting, topic, queries);
 
   return NextResponse.json({
     paper: {
@@ -98,17 +98,11 @@ export async function POST(req: Request) {
       recipient,
       abstract: paper.abstract.slice(0, 400),
     },
-    resolvedUserPrompt: buildUserPrompt(cfg, {
-      title: paper.title,
-      abstract: paper.abstract,
-      authors,
-      recipient,
-    }),
-    topic,
-    queries,
-    greeting,
+    resolvedUserPrompt: buildUserPrompt(cfg, ctx),
+    greeting: firstName(ctx.name),
     subject,
     body: emailBody,
+    source,
     modelError,
   });
 }
