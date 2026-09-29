@@ -1,4 +1,4 @@
-import { db, defaultCollectionId } from "./db";
+import { db } from "./db";
 import { pendingCount } from "./runner";
 import { parseEmailList } from "./emails";
 import type { Collection, CollectionSummary, Recipient } from "./types";
@@ -140,15 +140,20 @@ export function updateRecipient(
  * Deleting a collection drops its addresses but never its sends — those are
  * the record of who was contacted, and losing them would let the same people
  * be emailed again from a rebuilt list.
+ *
+ * Any collection can go, including the one imports write to, as long as one
+ * remains for a batch to point at. The refusals below are the cases where
+ * deleting would change what a running or scheduled job does behind your back.
  */
 export function deleteCollection(id: number): { ok: boolean; error?: string } {
   const collection = getCollection(id);
   if (!collection) return { ok: false, error: "Collection not found." };
-  if (id === defaultCollectionId()) {
+
+  const total = (db.prepare("SELECT COUNT(*) AS n FROM collections").get() as { n: number }).n;
+  if (total <= 1) {
     return {
       ok: false,
-      error:
-        "The scraped pool cannot be deleted — rebuilding it means re-running the scraper. Rename it instead.",
+      error: "This is the only collection. Create another one before deleting it.",
     };
   }
 
@@ -160,9 +165,36 @@ export function deleteCollection(id: number): { ok: boolean; error?: string } {
     .get(id);
   if (running) return { ok: false, error: "A batch is still running against this collection." };
 
+  // Repointing an enabled schedule would silently change who it emails, so ask
+  // for that decision explicitly instead of making it here.
+  const scheduled = db
+    .prepare("SELECT name FROM schedules WHERE collection_id = ? AND enabled = 1 LIMIT 1")
+    .get(id) as { name: string } | undefined;
+  if (scheduled) {
+    return {
+      ok: false,
+      error: `The schedule "${scheduled.name}" sends to this collection. Pause or delete that schedule first.`,
+    };
+  }
+
   db.transaction(() => {
     db.prepare("DELETE FROM recipients WHERE collection_id = ?").run(id);
+    // Finished batches and paused schedules keep their history but lose the
+    // pointer, which is a foreign key and would otherwise block the delete.
+    db.prepare("UPDATE campaigns SET collection_id = NULL WHERE collection_id = ?").run(id);
+    db.prepare("UPDATE schedules SET collection_id = NULL WHERE collection_id = ?").run(id);
     db.prepare("DELETE FROM collections WHERE id = ?").run(id);
+
+    // Something must stay default: it is where `npm run import` writes and what
+    // a batch falls back to.
+    const hasDefault = db
+      .prepare("SELECT COUNT(*) AS n FROM collections WHERE is_default = 1")
+      .get() as { n: number };
+    if (hasDefault.n === 0) {
+      db.prepare(
+        "UPDATE collections SET is_default = 1 WHERE id = (SELECT MIN(id) FROM collections)",
+      ).run();
+    }
   })();
   return { ok: true };
 }

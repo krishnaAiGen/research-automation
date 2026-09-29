@@ -241,49 +241,51 @@ export default function RecipientsPage() {
       <Toast message={toast.msg} tone={toast.tone} />
 
       <Card title="Collections">
-        <div className="flex flex-wrap items-center gap-2">
-          {collections.map((c) => {
-            const on = c.id === activeId;
-            return (
-              <button
-                key={c.id}
-                className="btn"
-                onClick={() => {
-                  setActiveId(c.id);
-                  resetPage(() => {
-                    setQ("");
-                    setStatus("all");
-                    setTrack("");
-                  });
-                }}
-                style={
-                  on
-                    ? { background: "var(--series-1)", borderColor: "var(--series-1)", color: "#fff" }
-                    : undefined
-                }
-              >
-                {c.name}
-                <span className="tabular ml-2 opacity-70">{c.total.toLocaleString()}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="mt-4 flex flex-wrap items-end gap-2">
-          <input
-            className="field max-w-xs"
-            placeholder="New collection name…"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && createCollection()}
-          />
-          <button
-            className="btn"
-            onClick={createCollection}
-            disabled={busy === "create" || !newName.trim()}
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <Field
+            label="Working in"
+            hint="Everything below — adding, removing, renaming — applies to this collection"
           >
-            + New collection
-          </button>
+            <select
+              className="field"
+              value={activeId ?? ""}
+              onChange={(e) => {
+                setActiveId(Number(e.target.value));
+                resetPage(() => {
+                  setQ("");
+                  setStatus("all");
+                  setTrack("");
+                });
+              }}
+            >
+              {collections.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} — {c.total.toLocaleString()} address
+                  {c.total === 1 ? "" : "es"}
+                  {c.is_default ? " (default)" : ""}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="New collection" hint="Press Enter or use the button">
+            <div className="flex gap-2">
+              <input
+                className="field"
+                placeholder="e.g. ICML invitees"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && createCollection()}
+              />
+              <button
+                className="btn whitespace-nowrap"
+                onClick={createCollection}
+                disabled={busy === "create" || !newName.trim()}
+              >
+                + Create
+              </button>
+            </div>
+          </Field>
         </div>
       </Card>
 
@@ -324,11 +326,11 @@ export default function RecipientsPage() {
                 <button
                   className="btn btn-danger ml-auto"
                   onClick={removeCollection}
-                  disabled={busy === "delete-collection" || active.is_default === 1}
+                  disabled={busy === "delete-collection" || collections.length <= 1}
                   title={
-                    active.is_default === 1
-                      ? "The scraped pool cannot be deleted — rename it instead."
-                      : "Delete this collection and its addresses"
+                    collections.length <= 1
+                      ? "Create another collection first — one has to remain."
+                      : `Delete "${active.name}" and its ${active.total.toLocaleString()} address${active.total === 1 ? "" : "es"}`
                   }
                 >
                   Delete collection
