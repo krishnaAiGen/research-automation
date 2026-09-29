@@ -19,8 +19,9 @@ export async function GET(req: Request) {
   const params: unknown[] = [collectionId];
 
   if (q) {
-    // COALESCE so a hand-added row (no paper) still matches on its own fields.
-    where.push("(r.email LIKE ? OR COALESCE(p.title, '') LIKE ? OR r.name LIKE ?)");
+    // Matches only what the table shows. The paper title was searchable here
+    // once, which meant a hit could be a row with nothing visibly matching.
+    where.push("(r.email LIKE ? OR r.name LIKE ? OR r.notes LIKE ?)");
     params.push(`%${q}%`, `%${q}%`, `%${q}%`);
   }
   if (track) {

@@ -413,7 +413,7 @@ export default function RecipientsPage() {
             <div className="mb-4 flex flex-wrap items-center gap-2">
               <input
                 className="field max-w-xs"
-                placeholder="Search address, name, or paper…"
+                placeholder="Search address, name, or research area…"
                 value={q}
                 onChange={(e) => resetPage(() => setQ(e.target.value))}
               />
@@ -478,7 +478,7 @@ export default function RecipientsPage() {
                         />
                       </th>
                       <th className="py-2 text-left font-medium">Address</th>
-                      <th className="py-2 text-left font-medium">Paper / notes</th>
+                      <th className="py-2 text-left font-medium">Research area</th>
                       <th className="py-2 text-left font-medium">State</th>
                       <th className="py-2 text-right font-medium">Emailed</th>
                       <th className="py-2 text-right font-medium" />
@@ -503,12 +503,15 @@ export default function RecipientsPage() {
                             </span>
                           )}
                         </td>
+                        {/* The scraped paper title used to sit here. It no longer
+                            feeds anything: the conference prompt personalises on
+                            {{recipient_research_area}}, which is this notes field. */}
                         <td
                           className="max-w-[380px] truncate py-2"
-                          style={{ color: "var(--text-secondary)" }}
-                          title={r.title ?? r.notes}
+                          style={{ color: r.notes ? "var(--text-secondary)" : "var(--text-muted)" }}
+                          title={r.notes || "No research area set — the email will omit it"}
                         >
-                          {r.title ?? (r.notes || "—")}
+                          {r.notes || "—"}
                         </td>
                         <td className="py-2">
                           <Badge status={r.sent ? "sent" : "draft"} />
