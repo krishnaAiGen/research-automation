@@ -131,7 +131,7 @@ ssh -L 3000:localhost:3000 ec2-user@<instance>
 Then open <http://localhost:3000>. This is the right choice for a tool you use
 yourself.
 
-**Option 2 — a password-protected HTTPS URL.** See
+**Option 2 — a hostname you can open from anywhere.** See
 [Putting it on a public URL](#putting-it-on-a-public-url) for the full walkthrough;
 the nginx config itself is here.
 
@@ -190,10 +190,14 @@ docker compose exec app sh -c 'cd /data && tar cf - app.db' > backup-$(date +%F)
 
 ## Putting it on a public URL
 
-You need a **domain you own**. Let's Encrypt refuses by policy to issue for
-`*.compute.amazonaws.com`, so the hostname EC2 hands you cannot have a
-certificate — point your own domain at the instance instead. Any registrar is
-fine; this costs about $10 a year.
+Two routes. If you want a free hostname and the least work, skip to
+[A free hostname instead](#a-free-hostname-instead-recommended) — it needs no
+domain, no certbot and no open ports. What follows is the route for a domain you
+own and control.
+
+You need a domain you actually own: Let's Encrypt refuses by policy to issue for
+`*.compute.amazonaws.com`, so the hostname EC2 hands you can never have a
+certificate. Any registrar is fine; about $10 a year.
 
 Never skip the password step. This app can send mail from your Gmail to thousands
 of people and has no login of its own, so the only thing between a stranger and
@@ -249,17 +253,60 @@ sudo certbot renew --dry-run                       # confirms auto-renewal works
 The package installs a renewal timer, so this does not need revisiting. Open
 <https://outreach.your-domain.com>, enter the password, and you have the app.
 
-### Without a domain
+## A free hostname instead (recommended)
 
-If you would rather not buy one, use a tunnel instead of opening ports at all.
-[Tailscale](https://tailscale.com) gives the instance an HTTPS name on its
-`ts.net` domain with no inbound ports and no Elastic IP:
+You do not have to buy a domain. [Tailscale](https://tailscale.com/docs/features/tailscale-funnel)
+hands out a hostname on its own `ts.net` domain and provisions a browser-trusted
+certificate for it automatically — the same deal Vercel gives you, and it is on
+the free plan. It needs **no domain, no Elastic IP, no certbot, and no inbound
+ports**: traffic arrives over Tailscale's relays rather than by connecting to the
+instance, so the security group can stay SSH-only.
 
-- `tailscale serve https / http://127.0.0.1:3000` — reachable from your own
-  devices anywhere, authenticated by Tailscale identity. Better security than a
-  password on an open port, and the right choice if only you use this.
-- `tailscale funnel 443 on` — same URL, but open to the whole internet. If you
-  do that, still put the nginx basic-auth in front of it.
+On the instance:
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up                       # prints a link to authenticate
+```
+
+In the Tailscale admin console, enable **MagicDNS** and **HTTPS Certificates** for
+the tailnet (both under DNS). Then pick one:
+
+**Private — reachable from your devices, nobody else's.** This is the one to use.
+
+```bash
+sudo tailscale serve --bg 3000
+sudo tailscale serve status             # prints the https://<host>.<tailnet>.ts.net URL
+```
+
+Open that URL from any laptop or phone signed into your tailnet. It solves the
+authentication problem rather than papering over it: the app has no login, and
+with `serve` nobody outside your tailnet can reach it at all — no password to
+leak, no port to scan.
+
+**Public — open to the whole internet.** Only if someone without Tailscale needs
+in. Funnel may need enabling for the node in the admin console first, and it can
+only listen on 443, 8443 or 10000.
+
+```bash
+sudo tailscale funnel --bg 3000
+sudo tailscale funnel status
+```
+
+If you do this, put the nginx basic auth from
+[Reaching it](#reaching-it) in front and point Funnel at nginx instead of at
+3000 — a public URL to an app with no login is an open relay to your Gmail.
+
+### Other free options
+
+- **DuckDNS** — a free `you.duckdns.org` subdomain that works with the nginx and
+  certbot path above. More moving parts than Tailscale: you still open 80 and
+  443, and because DuckDNS allows only one TXT record per domain you need
+  `certbot-dns-duckdns` (or HTTP-01 with port 80 already reachable).
+- **Cloudflare quick tunnel** — `cloudflared tunnel --url http://localhost:3000`
+  gives an instant `*.trycloudflare.com` HTTPS URL with no account. Fine for
+  showing someone the UI for ten minutes; the URL changes on every restart, so
+  it is not a deployment.
 
 ## Getting recipients onto the server
 
