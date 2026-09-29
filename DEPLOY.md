@@ -2,11 +2,157 @@
 
 This app needs **a writable disk and a process that stays alive**. That rules
 out serverless hosts, Vercel included. Docker on an EC2 instance gives it both,
-with no code changes — see [Docker on EC2](#docker-on-ec2).
+with no code changes.
 
 Render, Railway, Fly or any VPS work the same way: build `npm ci && npm run
 build`, start `npm start` (it honours `$PORT`), and mount a disk with
 `DATABASE_PATH` pointing into it.
+
+**Start here:** [EC2 from scratch](#ec2-from-scratch) is the complete walkthrough —
+launch an instance, run the app in Docker, and reach it on a free HTTPS hostname
+with no domain to buy and no ports to open.
+
+## EC2 from scratch
+
+Every step, in order. Budget about twenty minutes, most of it waiting on the
+image build.
+
+### 1. Launch the instance
+
+In the EC2 console, **Launch instance**:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| AMI | Amazon Linux 2023 | The `dnf` commands below assume it |
+| Instance type | **t3.small** (2 GiB) | `next build` runs on the instance and will OOM on t3.micro's 1 GiB unless you add swap — see [If the build is killed](#if-the-build-is-killed) |
+| Key pair | create or pick one | You need it to SSH in |
+| Storage | **20 GiB gp3** | The default 8 GiB is too tight: the image alone is ~1.2 GiB before build cache |
+| Security group | **SSH (22) from My IP** and nothing else | Tailscale needs no inbound port at all |
+
+Leave outbound rules at the default (allow all) — the app needs to reach
+OpenRouter and Gmail. AWS throttles outbound port 25, but this app sends over
+465, so that restriction doesn't apply.
+
+Then connect:
+
+```bash
+ssh -i /path/to/key.pem ec2-user@<instance-public-ip>
+```
+
+### 2. Install Docker and the compose plugin
+
+```bash
+sudo dnf install -y docker git
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER
+```
+
+`dnf install docker` on Amazon Linux 2023 does **not** include `docker compose`,
+so install the plugin explicitly or every compose command below fails with
+"docker: 'compose' is not a docker command":
+
+```bash
+sudo mkdir -p /usr/local/lib/docker/cli-plugins
+sudo curl -SL \
+  https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
+  -o /usr/local/lib/docker/cli-plugins/docker-compose
+sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+```
+
+On an ARM instance (`t4g.*`) use the `aarch64` binary instead.
+
+Now log out and back in so the `docker` group applies, then check both:
+
+```bash
+exit
+ssh -i /path/to/key.pem ec2-user@<instance-public-ip>
+docker ps && docker compose version
+```
+
+### 3. Run the app
+
+```bash
+git clone https://github.com/krishnaAiGen/research-automation.git
+cd research-automation
+cp .env.example .env.local
+nano .env.local          # fill in the keys below, then Ctrl-O, Enter, Ctrl-X
+```
+
+| Variable | Needed for |
+| --- | --- |
+| `OPENROUTER_API_KEY` | Any send at all, dry runs included |
+| `GMAIL_ADDRESS` | Live delivery |
+| `GMAIL_APP_PASSWORD` | Live delivery — a Google [App Password](https://myaccount.google.com/apppasswords), not your login password |
+| `GMAIL_FROM_NAME` | Optional display name |
+
+Leave `DATABASE_PATH` and `SCRAPER_ROOT` alone; compose sets the first and the
+second is only for `npm run import`.
+
+```bash
+docker compose up -d --build     # first build takes a few minutes
+curl localhost:3000/api/health
+```
+
+A JSON response means it's up. `"dataImported":false` is expected — the database
+starts empty and seeds its own schema.
+
+### 4. Get a free HTTPS hostname
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+```
+
+That prints a URL. Open it in your browser and sign in; the instance joins your
+tailnet. Then in the [admin console](https://login.tailscale.com/admin/dns)
+under **DNS**, enable **MagicDNS** and **HTTPS Certificates** — `serve` cannot
+issue a certificate without them.
+
+```bash
+sudo tailscale serve --bg 3000
+sudo tailscale serve status        # prints your https://<host>.<tailnet>.ts.net URL
+```
+
+### 5. Open it
+
+**Install Tailscale on the machine you want to browse from** and sign into the
+same account. This is the step people miss: `serve` publishes to your tailnet, so
+without the client the URL will not resolve.
+
+Then open the `https://<host>.<tailnet>.ts.net` URL from your laptop or phone,
+anywhere in the world. Real certificate, no warnings, nothing exposed to the
+internet.
+
+### 6. Configure the app
+
+1. **Email prompt** — fill in the conference and sender fields. They ship as
+   visible `[SET …]` placeholders so an unedited template can't go out by
+   accident.
+2. **Recipients** — create a collection and paste your addresses in, comma
+   separated.
+3. **Send** — leave **dry run** on for the first batch, then read the generated
+   emails on the batch detail page before you switch to live.
+
+### Day-to-day
+
+```bash
+cd research-automation
+git pull && docker compose up -d --build    # deploy new code, data survives
+docker compose logs -f app                  # follow logs
+docker compose restart app                  # restart
+docker compose exec app npm run reset       # clear send history (backs up first)
+```
+
+### If the build is killed
+
+`next build` exiting with code 137 or "Killed" on a 1 GiB instance is the OOM
+killer. Either resize to t3.small, or add swap:
+
+```bash
+sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile
+echo '/swapfile swap swap defaults 0 0' | sudo tee -a /etc/fstab
+```
 
 ## Why not Vercel
 
@@ -70,70 +216,52 @@ Add an entry the same way if you ever take on another dependency with an install
 script. Anything not listed there is worth reading before you approve it — that
 is the point of the mechanism.
 
-## Docker on EC2
+## Container reference
+
+Setup steps are in [EC2 from scratch](#ec2-from-scratch); this is what the
+container does, for when something surprises you.
 
 `Dockerfile` and `docker-compose.yml` are in the repo. The image was built and
-run end to end: all pages and API routes 200, the scheduler starts exactly once,
-data survives `docker restart`, and the container reports `healthy`.
-
-On the instance, once, install Docker:
-
-```bash
-sudo dnf install -y docker            # Amazon Linux 2023 (apt-get on Ubuntu)
-sudo systemctl enable --now docker
-sudo usermod -aG docker $USER         # log out and back in for this to apply
-```
-
-Then:
-
-```bash
-git clone https://github.com/krishnaAiGen/research-automation.git
-cd research-automation
-cp .env.example .env.local            # fill in the keys; compose reads this file
-docker compose up -d --build
-curl localhost:3000/api/health
-```
-
-That's it. `restart: unless-stopped` brings it back after a crash or an instance
-reboot, so a schedule resumes unattended; anything left mid-batch is marked
-paused at startup and resumes from the Send page.
-
-**Environment variables** go in `.env.local`:
-
-| Variable | Value |
-| --- | --- |
-| `OPENROUTER_API_KEY` | Required for any send, dry runs included |
-| `GMAIL_ADDRESS` / `GMAIL_APP_PASSWORD` | Required for live delivery. Without them only dry runs work |
-| `GMAIL_FROM_NAME` | Optional display name |
-
-`DATABASE_PATH` is set to `/data/app.db` by compose — don't override it, or the
-database lands on the container filesystem and is discarded on the next deploy.
-`SCRAPER_ROOT` is only read by `npm run import` and isn't needed.
+run end to end before being committed: all pages and API routes 200, running as
+the unprivileged `node` user, the scheduler starting exactly once, data surviving
+`docker restart`, and the container reporting `healthy`.
 
 **The volume is the whole point.** Compose declares a named volume `app-data`
-mounted at `/data`. It outlives the container, so `docker compose up --build`
-after a `git pull` redeploys the code and keeps the data. `docker compose down`
-keeps it too; only `docker compose down -v` destroys it.
+mounted at `/data`, and `DATABASE_PATH=/data/app.db` points the app into it. It
+outlives the container, so `docker compose up --build` after a `git pull`
+redeploys code and keeps data. `docker compose down` keeps it too; only
+`docker compose down -v` destroys it. Don't override `DATABASE_PATH`, or the
+database lands on the container filesystem and is discarded on the next deploy.
+
+**It restarts itself.** `restart: unless-stopped` brings the app back after a
+crash or an instance reboot, so a schedule resumes unattended. A batch left
+mid-run is marked `paused` at startup and resumes from the Send page — the
+queue query means it picks up exactly where it stopped.
+
+**One replica, deliberately.** "Nobody is emailed twice" is a `NOT EXISTS` check
+against the `sends` table, which two containers could both pass for the same
+address. Don't scale this service while it is backed by SQLite.
 
 ### Reaching it
 
 The container listens on 3000. **Do not open port 3000 in the security group.**
 The API has no authentication, so anything that can reach it can send live mail
-from your Gmail to your whole list. Two safe options.
+from your Gmail to your whole list.
 
-**Option 1 — SSH tunnel. Nothing exposed, nothing to configure.** Leave the
-security group at SSH-only (ideally from your IP alone) and forward the port:
+The walkthrough uses Tailscale, which needs no open port at all. Two alternatives:
+
+**An SSH tunnel** needs nothing installed. Leave the security group at SSH-only
+and forward the port:
 
 ```bash
 ssh -L 3000:localhost:3000 ec2-user@<instance>
 ```
 
-Then open <http://localhost:3000>. This is the right choice for a tool you use
-yourself.
+Then open <http://localhost:3000>.
 
-**Option 2 — a hostname you can open from anywhere.** See
-[Putting it on a public URL](#putting-it-on-a-public-url) for the full walkthrough;
-the nginx config itself is here.
+**nginx with a password**, if you have a domain — see
+[Putting it on a public URL](#putting-it-on-a-public-url) for the full sequence.
+The server block itself:
 
 ```bash
 sudo dnf install -y nginx httpd-tools           # Amazon Linux 2023
