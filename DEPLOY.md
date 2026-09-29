@@ -207,14 +207,15 @@ sudo tailscale serve status            # now research-outreach.<tailnet>.ts.net
 A fresh certificate is issued for the new name on first request, so the first
 load may take a second or two.
 
-**To make it public** (only if someone without Tailscale needs in — and put the
-nginx basic auth from [Reaching it](#reaching-it) in front first):
+**To make it public**, do not point Funnel at 3004 — that publishes the app
+itself, which has no login. Follow
+[Making it public, with a password](#making-it-public-with-a-password), which
+puts nginx on 8080 in between and funnels that instead.
 
-```bash
-sudo tailscale funnel --bg 3004
-```
-
-**To turn the proxy off:** `sudo tailscale serve --https=443 off`.
+**To turn the proxy off:** `sudo tailscale serve --https=443 off`. If that
+reports `handler does not exist`, the config is registered under a different
+hostname than the one you are on now — `sudo tailscale serve reset` clears every
+serve and funnel handler, after which you can re-add just the one you want.
 
 ### Making it public, with a password
 
@@ -236,7 +237,12 @@ The config ships in the repo, so there is nothing to paste — copy it into plac
 
 ```bash
 sudo cp deploy/nginx-funnel.conf /etc/nginx/conf.d/research-automation.conf
-sudo nginx -t && sudo systemctl enable --now nginx
+sudo nginx -t
+# `enable --now` will NOT pick up the new config if nginx is already running,
+# which it is: apt-get started it at install time. Restart, don't start.
+sudo systemctl enable nginx && sudo systemctl restart nginx
+
+sudo ss -ltnp | grep 8080                        # nginx must be listening here
 curl -si localhost:8080/api/health | head -1     # expect 401 — the password is working
 ```
 
@@ -408,7 +414,7 @@ sudo htpasswd -c /etc/nginx/.htpasswd you        # prompts for a password
 
 sudo cp deploy/nginx-domain.conf /etc/nginx/conf.d/research-automation.conf
 sudo sed -i 's/your.domain/outreach.example.com/' /etc/nginx/conf.d/research-automation.conf
-sudo nginx -t && sudo systemctl enable --now nginx
+sudo nginx -t && sudo systemctl enable nginx && sudo systemctl restart nginx
 
 sudo apt-get install -y certbot python3-certbot-nginx   # dnf on Amazon Linux
 sudo certbot --nginx -d outreach.example.com   # adds TLS and the 80->443 redirect
@@ -478,11 +484,14 @@ sudo htpasswd -c /etc/nginx/.htpasswd you          # prompts for a password
 ```
 
 Write the server block from [Reaching it](#reaching-it) to
-`/etc/nginx/conf.d/research-automation.conf`, with `server_name` set to your
-domain, then:
-
 ```bash
-sudo nginx -t && sudo systemctl enable --now nginx
+sudo cp deploy/nginx-domain.conf /etc/nginx/conf.d/research-automation.conf
+sudo sed -i 's/your.domain/outreach.your-domain.com/' \
+  /etc/nginx/conf.d/research-automation.conf
+sudo nginx -t
+# Restart, not `enable --now`: apt-get already started nginx, and starting an
+# already-running unit does not reload its config.
+sudo systemctl enable nginx && sudo systemctl restart nginx
 ```
 
 **5. TLS.** certbot edits the config in place to add the certificate and the
@@ -529,17 +538,10 @@ with `serve` nobody outside your tailnet can reach it at all — no password to
 leak, no port to scan.
 
 **Public — open to the whole internet.** Only if someone without Tailscale needs
-in. Funnel may need enabling for the node in the admin console first, and it can
-only listen on 443, 8443 or 10000.
-
-```bash
-sudo tailscale funnel --bg 3004
-sudo tailscale funnel status
-```
-
-If you do this, put the nginx basic auth from
-[Reaching it](#reaching-it) in front and point Funnel at nginx instead of at
-3004 — a public URL to an app with no login is an open relay to your Gmail.
+in, and never pointed at 3004: the app has no login, so publishing it directly is
+an open relay to your Gmail. Put nginx with a password on 8080 and funnel that
+instead — the full sequence is in
+[Making it public, with a password](#making-it-public-with-a-password).
 
 ### Other free options
 
