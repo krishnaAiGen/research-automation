@@ -232,36 +232,17 @@ sudo apt-get install -y nginx apache2-utils      # dnf install nginx httpd-tools
 sudo htpasswd -c /etc/nginx/.htpasswd you        # prompts for a password
 ```
 
-Write `/etc/nginx/conf.d/research-automation.conf`:
+The config ships in the repo, so there is nothing to paste — copy it into place:
 
-```nginx
-server {
-    # localhost only — Funnel connects to this, the internet never does.
-    listen 127.0.0.1:8080;
-
-    location / {
-        auth_basic           "Research Outreach";
-        auth_basic_user_file /etc/nginx/.htpasswd;
-
-        proxy_pass         http://127.0.0.1:3004;
-        proxy_http_version 1.1;
-        proxy_set_header   Host              $host;
-        proxy_set_header   X-Real-IP         $remote_addr;
-        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto https;
-
-        # A batch runs for a long time; don't let the proxy cut it off.
-        proxy_read_timeout 300s;
-    }
-}
+```bash
+sudo cp deploy/nginx-funnel.conf /etc/nginx/conf.d/research-automation.conf
+sudo nginx -t && sudo systemctl enable --now nginx
+curl -si localhost:8080/api/health | head -1     # expect 401 — the password is working
 ```
 
 Then swap the tailnet-only proxy for the public one:
 
 ```bash
-sudo nginx -t && sudo systemctl enable --now nginx
-curl -si localhost:8080/api/health | head -1     # expect 401 — the password is working
-
 sudo tailscale serve --https=443 off             # drop the tailnet-only proxy
 sudo tailscale funnel --bg 8080                  # publish nginx, not the app
 sudo tailscale funnel status
@@ -419,41 +400,18 @@ Then open <http://localhost:3004>.
 
 **nginx with a password**, if you have a domain — see
 [Putting it on a public URL](#putting-it-on-a-public-url) for the full sequence.
-The server block itself:
+The config ships in the repo as `deploy/nginx-domain.conf`; don't retype it.
 
 ```bash
 sudo apt-get install -y nginx apache2-utils      # dnf install nginx httpd-tools on Amazon Linux
-sudo htpasswd -c /etc/nginx/.htpasswd you       # prompts for a password
-```
+sudo htpasswd -c /etc/nginx/.htpasswd you        # prompts for a password
 
-`/etc/nginx/conf.d/research-automation.conf`:
-
-```nginx
-server {
-    listen 80;
-    server_name your.domain;
-
-    location / {
-        auth_basic           "Research Outreach";
-        auth_basic_user_file /etc/nginx/.htpasswd;
-
-        proxy_pass         http://127.0.0.1:3004;
-        proxy_http_version 1.1;
-        proxy_set_header   Host              $host;
-        proxy_set_header   X-Real-IP         $remote_addr;
-        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $scheme;
-
-        # A batch runs for a long time; don't let the proxy cut it off.
-        proxy_read_timeout 300s;
-    }
-}
-```
-
-```bash
+sudo cp deploy/nginx-domain.conf /etc/nginx/conf.d/research-automation.conf
+sudo sed -i 's/your.domain/outreach.example.com/' /etc/nginx/conf.d/research-automation.conf
 sudo nginx -t && sudo systemctl enable --now nginx
+
 sudo apt-get install -y certbot python3-certbot-nginx   # dnf on Amazon Linux
-sudo certbot --nginx -d your.domain            # adds TLS and the 80->443 redirect
+sudo certbot --nginx -d outreach.example.com   # adds TLS and the 80->443 redirect
 ```
 
 Basic auth over plain HTTP sends the password in near-clear, so run certbot
