@@ -216,6 +216,71 @@ sudo tailscale funnel --bg 3004
 
 **To turn the proxy off:** `sudo tailscale serve --https=443 off`.
 
+### Making it public, with a password
+
+`serve` is tailnet-only: to anyone outside your tailnet the name does not resolve
+at all. `funnel` publishes the same URL to the internet — but pointed straight at
+the app it is an open relay to your Gmail, because the app has no login. Put a
+password in front first.
+
+This needs **no domain, no certbot and no open security-group ports**: Tailscale
+terminates TLS and reaches the instance over its own relays. nginx sits on
+localhost between Funnel and the app.
+
+```bash
+sudo apt-get install -y nginx apache2-utils      # dnf install nginx httpd-tools on Amazon Linux
+sudo htpasswd -c /etc/nginx/.htpasswd you        # prompts for a password
+```
+
+Write `/etc/nginx/conf.d/research-automation.conf`:
+
+```nginx
+server {
+    # localhost only — Funnel connects to this, the internet never does.
+    listen 127.0.0.1:8080;
+
+    location / {
+        auth_basic           "Research Outreach";
+        auth_basic_user_file /etc/nginx/.htpasswd;
+
+        proxy_pass         http://127.0.0.1:3004;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto https;
+
+        # A batch runs for a long time; don't let the proxy cut it off.
+        proxy_read_timeout 300s;
+    }
+}
+```
+
+Then swap the tailnet-only proxy for the public one:
+
+```bash
+sudo nginx -t && sudo systemctl enable --now nginx
+curl -si localhost:8080/api/health | head -1     # expect 401 — the password is working
+
+sudo tailscale serve --https=443 off             # drop the tailnet-only proxy
+sudo tailscale funnel --bg 8080                  # publish nginx, not the app
+sudo tailscale funnel status
+```
+
+Funnel is gated per-node like Serve was, so if it refuses, open the link it
+prints. It can only publish on 443, 8443 or 10000.
+
+The URL is now the same `https://<host>.<tailnet>.ts.net`, reachable from any
+browser anywhere, and it asks for the password before it shows anything. The
+browser sends that password on every later request, so the dashboard's polling
+and every API call keep working with no code change.
+
+**Check it from a device that is not on your tailnet** — a phone on mobile data
+is the easiest — to confirm both that it resolves and that it challenges you.
+
+To go back to private: `sudo tailscale funnel --https=443 off` then
+`sudo tailscale serve --bg 3004`.
+
 ### 6. Configure the app
 
 1. **Email prompt** — fill in the conference and sender fields. They ship as
