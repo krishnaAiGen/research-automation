@@ -271,6 +271,16 @@ function migrate(db: Database.Database) {
   addColumn(db, "prompt_configs", "use_system_prompt", "INTEGER NOT NULL DEFAULT 1");
   addColumn(db, "prompt_configs", "use_user_prompt", "INTEGER NOT NULL DEFAULT 1");
 
+  // Dry run is no longer an option: every batch and every scheduled run sends
+  // for real. Schedules are forward-looking config, so a dry one left over from
+  // before would quietly never deliver — flip them. Unfinished batches likewise.
+  // Finished batches keep dry_run = 1, because that is the truth about what they
+  // did and the history labels depend on it.
+  db.prepare("UPDATE schedules SET dry_run = 0 WHERE dry_run = 1").run();
+  db.prepare(
+    "UPDATE campaigns SET dry_run = 0 WHERE dry_run = 1 AND status IN ('draft','queued','paused')",
+  ).run();
+
   // Opt-in per batch: include addresses that already have a successful send.
   // Defaults to 0 so the "nobody is emailed twice" behaviour is what you get
   // unless you ask otherwise.

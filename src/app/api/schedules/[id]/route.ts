@@ -37,10 +37,6 @@ export async function PATCH(req: Request, { params }: Ctx) {
     sets.push("days_of_week = ?");
     vals.push(JSON.stringify(Array.isArray(b.days_of_week) ? b.days_of_week.map(Number) : []));
   }
-  if (b.dry_run !== undefined) {
-    sets.push("dry_run = ?");
-    vals.push(b.dry_run ? 1 : 0);
-  }
   if (b.prompt_config_id !== undefined) {
     sets.push("prompt_config_id = ?");
     vals.push(b.prompt_config_id ? Number(b.prompt_config_id) : null);

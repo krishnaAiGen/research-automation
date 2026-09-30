@@ -62,7 +62,7 @@ export async function POST(req: Request) {
       target,
       Math.max(0, Number(body.send_delay_ms ?? 3000)),
       sendToAll,
-      body.dry_run === false ? 0 : 1,
+      0, // dry_run: removed as an option; every batch sends for real
       allowResend,
       String(body.test_recipient ?? "").trim(),
       trackFilter,

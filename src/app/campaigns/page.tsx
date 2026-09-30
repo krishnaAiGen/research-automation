@@ -34,7 +34,6 @@ export default function CampaignsPage() {
     prompt_config_id: 0,
     send_delay_ms: 3000,
     send_to_all: false,
-    dry_run: true,
     allow_resend: false,
     test_recipient: "",
   });
@@ -99,7 +98,6 @@ export default function CampaignsPage() {
         prompt_config_id: form.prompt_config_id || undefined,
         send_delay_ms: form.send_delay_ms,
         send_to_all: form.send_to_all,
-        dry_run: form.dry_run,
         test_recipient: form.test_recipient,
         start,
       }),
@@ -112,7 +110,7 @@ export default function CampaignsPage() {
     } else {
       setToast({
         msg: start
-          ? `Batch started — ${willSend.toLocaleString()} email${willSend === 1 ? "" : "s"}${form.dry_run ? " (dry run)" : ""}.`
+          ? `Batch started — sending ${willSend.toLocaleString()} real email${willSend === 1 ? "" : "s"}.`
           : "Batch saved as a draft.",
         tone: "ok",
       });
@@ -163,7 +161,12 @@ export default function CampaignsPage() {
           hint={`${collection?.name ?? "—"} · ${form.send_to_all ? "every address" : "primary address per paper"}${form.allow_resend ? " · re-sending allowed" : ""}`}
           tone="accent"
         />
-        <StatTile label="This batch will send" value={willSend.toLocaleString()} hint={form.dry_run ? "Dry run — nothing delivered" : "Live delivery"} />
+        <StatTile
+          label="This batch will send"
+          value={willSend.toLocaleString()}
+          hint={form.test_recipient ? `All redirected to ${form.test_recipient}` : "Live delivery"}
+          tone={form.test_recipient ? "neutral" : "critical"}
+        />
         <StatTile
           label="Estimated duration"
           value={estMinutes < 60 ? `${Math.ceil(estMinutes)} min` : `${(estMinutes / 60).toFixed(1)} h`}
@@ -335,14 +338,6 @@ export default function CampaignsPage() {
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
-                checked={form.dry_run}
-                onChange={(e) => setForm({ ...form, dry_run: e.target.checked })}
-              />
-              Dry run — generate and log the emails but deliver nothing
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
                 checked={form.allow_resend}
                 onChange={(e) => setForm({ ...form, allow_resend: e.target.checked })}
               />
@@ -355,7 +350,7 @@ export default function CampaignsPage() {
             </label>
           </div>
 
-          {!form.dry_run && form.allow_resend && collection && collection.contacted > 0 && (
+          {form.allow_resend && collection && collection.contacted > 0 && (
             <div
               className="rounded-lg p-3 text-sm"
               style={{ background: "rgba(208,59,59,0.10)", color: "var(--critical)" }}
@@ -366,16 +361,24 @@ export default function CampaignsPage() {
             </div>
           )}
 
-          {!form.dry_run && (
-            <div
-              className="rounded-lg p-3 text-sm"
-              style={{ background: "rgba(208,59,59,0.10)", color: "var(--critical)" }}
-            >
-              ! Live mode. {willSend.toLocaleString()} real email
-              {willSend === 1 ? "" : "s"} will be delivered
-              {form.test_recipient ? ` to ${form.test_recipient}` : " to paper authors"}.
-            </div>
-          )}
+          <div
+            className="rounded-lg p-3 text-sm"
+            style={{ background: "rgba(208,59,59,0.10)", color: "var(--critical)" }}
+          >
+            ! Every batch sends for real — there is no dry run.{" "}
+            {form.test_recipient ? (
+              <>
+                All {willSend.toLocaleString()} will go to{" "}
+                <strong>{form.test_recipient}</strong> instead of the recipients.
+              </>
+            ) : (
+              <>
+                {willSend.toLocaleString()} real email{willSend === 1 ? "" : "s"} will be
+                delivered to recipients and cannot be recalled. To test, put your own
+                address in <em>Redirect to (testing)</em> above.
+              </>
+            )}
+          </div>
 
           <div className="flex flex-wrap gap-2">
             <button
@@ -383,7 +386,9 @@ export default function CampaignsPage() {
               onClick={() => create(true)}
               disabled={busy || willSend === 0}
             >
-              {busy ? "Starting…" : `Start sending ${willSend.toLocaleString()}`}
+              {busy
+                ? "Starting…"
+                : `Send ${willSend.toLocaleString()} real email${willSend === 1 ? "" : "s"} now`}
             </button>
             <button className="btn" onClick={() => create(false)} disabled={busy || willSend === 0}>
               Save as draft

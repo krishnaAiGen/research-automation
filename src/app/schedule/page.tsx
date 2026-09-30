@@ -46,7 +46,6 @@ export default function SchedulePage() {
     window_start: "09:00",
     window_end: "17:00",
     send_delay_ms: 3000,
-    dry_run: true,
     enabled: true,
     prompt_config_id: 0,
     collection_id: 0,
@@ -314,14 +313,6 @@ export default function SchedulePage() {
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
-                checked={form.dry_run}
-                onChange={(e) => setForm({ ...form, dry_run: e.target.checked })}
-              />
-              Dry run — generate the emails but deliver nothing
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
                 checked={form.enabled}
                 onChange={(e) => setForm({ ...form, enabled: e.target.checked })}
               />
@@ -329,12 +320,12 @@ export default function SchedulePage() {
             </label>
           </div>
 
-          {!form.dry_run && form.enabled && (
+          {form.enabled && (
             <div
               className="rounded-lg p-3 text-sm"
               style={{ background: "rgba(208,59,59,0.10)", color: "var(--critical)" }}
             >
-              ! Live mode. This will deliver up to {form.batch_size} real emails per run, unattended.
+              ! This schedule delivers up to {form.batch_size} real emails per run, unattended. There is no dry run.
             </div>
           )}
 

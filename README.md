@@ -58,8 +58,8 @@ placeholders so an unedited template is impossible to send by accident.
 
 | Variable | Needed for |
 | --- | --- |
-| `OPENROUTER_API_KEY` | Generating queries. Required for any send, including dry runs. |
-| `GMAIL_ADDRESS` / `GMAIL_APP_PASSWORD` | Live delivery. A Google [App Password](https://myaccount.google.com/apppasswords), not your login password. Without these only dry runs work. |
+| `OPENROUTER_API_KEY` | Drafting with the model. Not needed if you untick **Use AI** and send the template as written. |
+| `GMAIL_ADDRESS` / `GMAIL_APP_PASSWORD` | Delivery. A Google [App Password](https://myaccount.google.com/apppasswords), not your login password. Without these a batch refuses to start. |
 | `GMAIL_FROM_NAME` | Display name on the message (optional). |
 | `SCRAPER_ROOT` | Where `npm run import` reads `downloads/papers.json` and `email_generator/sent_log.jsonl` from. |
 | `DATABASE_PATH` | Defaults to `./data/app.db`. |
@@ -83,9 +83,11 @@ picks the configuration it wants, so none of them have to share.
 **Send** (`/campaigns`) — pick a recipient collection, then how many of its
 remaining addresses to email (presets, a custom number, or all of them),
 optionally filtered to one track. Shows the pool, the batch size against it, and
-an estimated duration. Batches default to **dry run**; switching to live raises
-an explicit warning. Running batches can be paused, resumed, and cancelled, and
-each one has a detail page listing every generated email.
+an estimated duration. **Every batch sends for real — there is no dry run.** To
+test, put your own address in *Redirect to (testing)* and the whole batch goes
+there instead, which also proves Gmail actually works. Running batches can be
+paused, resumed, and cancelled, and each one has a detail page listing every
+email sent.
 
 **Schedule** (`/schedule`) — fire a batch of N emails from one collection on a
 cadence, restricted to chosen weekdays and an hours-of-day window, with an

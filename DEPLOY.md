@@ -91,9 +91,9 @@ nano .env.local          # fill in the keys below, then Ctrl-O, Enter, Ctrl-X
 
 | Variable | Needed for |
 | --- | --- |
-| `OPENROUTER_API_KEY` | Any send at all, dry runs included |
-| `GMAIL_ADDRESS` | Live delivery |
-| `GMAIL_APP_PASSWORD` | Live delivery — a Google [App Password](https://myaccount.google.com/apppasswords), not your login password |
+| `OPENROUTER_API_KEY` | Drafting with the model. Not needed if you untick **Use AI** on the Email prompt page |
+| `GMAIL_ADDRESS` | Delivery — a batch refuses to start without it |
+| `GMAIL_APP_PASSWORD` | Delivery — a Google [App Password](https://myaccount.google.com/apppasswords), not your login password |
 | `GMAIL_FROM_NAME` | Optional display name |
 
 Leave `DATABASE_PATH` and `SCRAPER_ROOT` alone; compose sets the first and the
@@ -314,8 +314,10 @@ To go back to private: `sudo tailscale funnel --https=443 off` then
    accident.
 2. **Recipients** — create a collection and paste your addresses in, comma
    separated.
-3. **Send** — leave **dry run** on for the first batch, then read the generated
-   emails on the batch detail page before you switch to live.
+3. **Send** — there is no dry run, so put your own address in *Redirect to
+   (testing)* for the first batch. The whole batch goes to you, which both shows
+   you the wording and proves Gmail delivery works. Clear the field to send for
+   real.
 
 ### Day-to-day
 
@@ -361,7 +363,7 @@ a `beforeFiles` rewrite in `next.config.ts` pointing at the instance.
 Read this before you do it. That rewrite is made by Vercel's server, from
 addresses that are not fixed on the Hobby plan, so **the EC2 API has to be open
 to the internet** — and this app has no authentication at all. Any stranger who
-finds the address can `POST /campaigns` with `dry_run: false` and send live mail
+finds the address can `POST /api/campaigns` and send real mail
 to your entire recipient list from your Gmail account. Making that safe means
 adding real login, not a header check, because the browser is the caller and
 cannot hold a secret.
@@ -674,6 +676,6 @@ reason enough to prefer pasting in only the lists you actually need.
 - Open **Email prompt** and fill in the conference and sender fields. They ship
   as visible `[SET …]`-style placeholders so an unedited template cannot be sent
   by accident.
-- Leave a batch on **dry run** first and read the generated emails on the batch
-  detail page before switching to live.
+- Every batch sends for real. Use *Redirect to (testing)* with your own address
+  first — it exercises Gmail end to end and reaches nobody else.
 - The dashboard banner lists whatever environment variable is still missing.

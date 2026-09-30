@@ -50,7 +50,7 @@ export async function POST(req: Request) {
       String(b.window_start || "09:00"),
       String(b.window_end || "18:00"),
       Math.max(0, Number(b.send_delay_ms ?? 3000)),
-      b.dry_run === false ? 0 : 1,
+      0, // dry_run: removed as an option; every run sends for real
       b.enabled ? 1 : 0,
       new Date().toISOString(),
     );
