@@ -53,6 +53,10 @@ export type PromptConfig = {
   reasoning: number;
   system_prompt: string;
   user_prompt: string;
+  /** 0 = omit the system message from the model call. */
+  use_system_prompt: number;
+  /** 0 = skip the model entirely and send the template as written. */
+  use_user_prompt: number;
   template: string;
   product_url: string;
   demo_url: string;

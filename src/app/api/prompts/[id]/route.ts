@@ -23,6 +23,10 @@ export async function PUT(req: Request, { params }: Ctx) {
     model: body.model ?? existing.model,
     reasoning: body.reasoning === undefined ? existing.reasoning : body.reasoning ? 1 : 0,
     system_prompt: body.system_prompt ?? existing.system_prompt,
+    use_system_prompt:
+      body.use_system_prompt === undefined ? existing.use_system_prompt : body.use_system_prompt ? 1 : 0,
+    use_user_prompt:
+      body.use_user_prompt === undefined ? existing.use_user_prompt : body.use_user_prompt ? 1 : 0,
     user_prompt: body.user_prompt ?? existing.user_prompt,
     template: body.template ?? existing.template,
     product_url: body.product_url ?? existing.product_url,
@@ -32,6 +36,7 @@ export async function PUT(req: Request, { params }: Ctx) {
 
   db.prepare(
     `UPDATE prompt_configs SET name=?, model=?, reasoning=?, system_prompt=?,
+       use_system_prompt=?, use_user_prompt=?,
        user_prompt=?, template=?, product_url=?, demo_url=?,
        ${CONFERENCE_FIELDS.map((f) => `${f}=?`).join(", ")}, updated_at=? WHERE id=?`,
   ).run(
@@ -39,6 +44,8 @@ export async function PUT(req: Request, { params }: Ctx) {
     merged.model,
     merged.reasoning,
     merged.system_prompt,
+    merged.use_system_prompt,
+    merged.use_user_prompt,
     merged.user_prompt,
     merged.template,
     merged.product_url,

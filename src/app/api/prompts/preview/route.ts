@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { generateEmail, buildUserPrompt } from "@/lib/openrouter";
+import { generateEmail, buildUserPrompt, usesModel } from "@/lib/openrouter";
 import { renderEmail, firstName } from "@/lib/render";
 import type { PromptConfig } from "@/lib/types";
 
@@ -61,7 +61,8 @@ export async function POST(req: Request) {
   let source: "model" | "template" = "template";
   let modelError: string | null = null;
 
-  if (body.live) {
+  // With the user prompt unticked there is no model call to make, live or not.
+  if (body.live && usesModel(cfg)) {
     const apiKey = (process.env.OPENROUTER_API_KEY || "").trim();
     if (!apiKey) {
       return NextResponse.json(

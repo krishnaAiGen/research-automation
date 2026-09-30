@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { generateEmail } from "./openrouter";
+import { generateEmail, usesModel } from "./openrouter";
 import { renderEmail } from "./render";
 import { Mailer, smtpCredsFromEnv } from "./mailer";
 import type { Campaign, PromptConfig, QueueItem } from "./types";
@@ -173,7 +173,15 @@ export function startCampaign(campaignId: number): { ok: boolean; error?: string
   }
 
   const apiKey = (process.env.OPENROUTER_API_KEY || "").trim();
-  if (!apiKey) return { ok: false, error: "OPENROUTER_API_KEY is not set in .env.local." };
+  // Only required when the configuration actually calls the model. A
+  // template-only batch needs no key at all.
+  if (!apiKey && usesModel(loadConfig(campaign.prompt_config_id))) {
+    return {
+      ok: false,
+      error:
+        "OPENROUTER_API_KEY is not set in .env.local. Untick the user prompt on the Email prompt page to send the template without the model.",
+    };
+  }
 
   if (!campaign.dry_run) {
     const creds = smtpCredsFromEnv();
@@ -212,6 +220,7 @@ async function execute(state: RunState, apiKey: string) {
   const campaignId = state.campaignId;
   let campaign = loadCampaign(campaignId)!;
   const cfg = loadConfig(campaign.prompt_config_id);
+  const aiEnabled = usesModel(cfg);
   const live = !campaign.dry_run;
   const mailer = live ? new Mailer(smtpCredsFromEnv()) : null;
 
@@ -256,13 +265,18 @@ async function execute(state: RunState, apiKey: string) {
       let subject = "";
       let body = "";
       try {
-        const gen = await generateEmail(apiKey, cfg, {
-          recipient: item.email,
-          name: item.name,
-          notes: item.notes,
-        });
-        subject = gen.subject;
-        body = gen.body;
+        if (aiEnabled) {
+          const gen = await generateEmail(apiKey, cfg, {
+            recipient: item.email,
+            name: item.name,
+            notes: item.notes,
+          });
+          subject = gen.subject;
+          body = gen.body;
+        }
+        // With the model off, subject and body stay empty here and the
+        // template render below fills them — the same path the model's
+        // empty-reply fallback uses.
       } catch (err) {
         if (state.abort.signal.aborted) break;
         recordSend({
@@ -279,8 +293,8 @@ async function execute(state: RunState, apiKey: string) {
         continue;
       }
 
-      // A reply with no usable body falls back to the config's template so the
-      // recipient still gets a complete, factually correct email.
+      // Either the model was off, or it returned nothing usable. Both end up
+      // here, sending the template as written.
       if (!body.trim()) {
         const fallback = renderEmail(cfg, {
           email: item.email,

@@ -137,6 +137,19 @@ export default function PromptPage() {
   if (error && !draft) return <LoadError message={error} onRetry={() => load()} />;
   if (!draft) return <p style={{ color: "var(--text-muted)" }}>Loading…</p>;
 
+  const aiOn = draft.use_user_prompt === 1;
+
+  const toggle = (key: "use_system_prompt" | "use_user_prompt", label: string) => (
+    <label className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-secondary)" }}>
+      <input
+        type="checkbox"
+        checked={draft[key] === 1}
+        onChange={(e) => set(key, e.target.checked ? 1 : 0)}
+      />
+      {label}
+    </label>
+  );
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">

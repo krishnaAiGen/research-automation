@@ -265,6 +265,12 @@ function migrate(db: Database.Database) {
   addColumn(db, "campaigns", "collection_id", "INTEGER REFERENCES collections(id)");
   addColumn(db, "schedules", "collection_id", "INTEGER REFERENCES collections(id)");
 
+  // Per prompt configuration: whether the model is used at all. With the user
+  // prompt off there is nothing to ask it, so the template is sent as written —
+  // no API call, no key needed, and byte-identical output every time.
+  addColumn(db, "prompt_configs", "use_system_prompt", "INTEGER NOT NULL DEFAULT 1");
+  addColumn(db, "prompt_configs", "use_user_prompt", "INTEGER NOT NULL DEFAULT 1");
+
   // Opt-in per batch: include addresses that already have a successful send.
   // Defaults to 0 so the "nobody is emailed twice" behaviour is what you get
   // unless you ask otherwise.

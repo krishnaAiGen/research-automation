@@ -31,6 +31,11 @@ npm run import -- --with-history
 > responds. Leave them unset and there is no login at all — fine on localhost,
 > reckless anywhere else, since the app can send mail from your Gmail.
 
+> **Don't want the AI involved?** Untick **Use AI** on the User prompt card on the
+> Email prompt page. The email template is then sent exactly as written, with the
+> conference, sender and recipient placeholders filled in — no model call, no
+> OpenRouter key needed, and identical output every time.
+
 > **Deploying?** See [DEPLOY.md](DEPLOY.md). This app needs a writable disk and a
 > long-lived process, so it cannot run on Vercel or any other serverless host —
 > not for want of a database driver, but because the scheduler needs a process
@@ -98,8 +103,9 @@ build others by hand and point a batch or a schedule at whichever you want.
   accepted too). Invalid tokens and addresses already in the collection are
   reported rather than failing the whole paste.
 - **Rename** a collection, **remove** individual addresses, and **delete** a
-  whole collection. The scraped pool can be renamed but not deleted — rebuilding
-  it means re-running the scraper.
+  whole collection — any of them, as long as one remains. Deleting the default
+  promotes another, since `npm run import` and a batch's fallback both need one.
+  A collection an enabled schedule points at is refused until you pause it.
 - The same address may sit in two collections. That does not make it reachable
   twice: "never emailed twice" is enforced against the send log, not the list.
 - Deleting a collection never deletes its sends. Those are the record of who was
@@ -124,11 +130,13 @@ are never touched by an import or by `npm run reset`.
 
 ## Notes on behaviour
 
-- **Nobody is emailed twice.** Eligibility is `NOT EXISTS (a successful send to
-  this address)`, checked both when the queue is built and again immediately
-  before each send, so two concurrent batches can't collide. Addresses that
-  differ only in case are treated as one person, and so are the same address in
-  two different collections.
+- **Nobody is emailed twice, unless you ask.** Eligibility is `NOT EXISTS (a
+  successful send to this address)`, checked both when the queue is built and
+  again immediately before each send, so two concurrent batches can't collide.
+  Addresses differing only in case are one person, and so is the same address in
+  two collections. Ticking **Allow re-sending** on a batch drops that clause for
+  that batch alone — which is how you send a reminder, or test against your own
+  address a second time.
 - **"Available to email now" is the number the batch will actually find.** The
   count and the queue run the same eligibility clause, which also excludes
   papers with no abstract to generate from — so the figure on the button is a

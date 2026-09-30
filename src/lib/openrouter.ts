@@ -6,6 +6,18 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 export type GeneratedEmail = { subject: string; body: string };
 
 /**
+ * Whether this configuration calls the model at all.
+ *
+ * The user prompt is the request; with it switched off there is nothing to ask,
+ * so the template is rendered and sent exactly as written. The system prompt
+ * only shapes the answer, so switching that off alone just drops the system
+ * message from the call.
+ */
+export function usesModel(cfg: Pick<PromptConfig, "use_user_prompt">): boolean {
+  return cfg.use_user_prompt !== 0;
+}
+
+/**
  * What the model is told about one recipient. A scraped author comes with a
  * paper; a hand-added contact comes with `name` / `notes` and empty paper
  * fields, so a prompt written for such a list should lean on those instead.
@@ -72,12 +84,15 @@ export async function generateEmail(
   ctx: PromptContext,
   signal?: AbortSignal,
 ): Promise<GeneratedEmail> {
+  const messages: { role: string; content: string }[] = [];
+  if (cfg.use_system_prompt !== 0 && cfg.system_prompt.trim()) {
+    messages.push({ role: "system", content: cfg.system_prompt });
+  }
+  messages.push({ role: "user", content: buildUserPrompt(cfg, ctx) });
+
   const payload: Record<string, unknown> = {
     model: cfg.model,
-    messages: [
-      { role: "system", content: cfg.system_prompt },
-      { role: "user", content: buildUserPrompt(cfg, ctx) },
-    ],
+    messages,
   };
   if (cfg.reasoning) payload.reasoning = { enabled: true };
 
