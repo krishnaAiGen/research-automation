@@ -264,6 +264,12 @@ function migrate(db: Database.Database) {
   // rows are backfilled to the scraped pool they were already sending to.
   addColumn(db, "campaigns", "collection_id", "INTEGER REFERENCES collections(id)");
   addColumn(db, "schedules", "collection_id", "INTEGER REFERENCES collections(id)");
+
+  // Opt-in per batch: include addresses that already have a successful send.
+  // Defaults to 0 so the "nobody is emailed twice" behaviour is what you get
+  // unless you ask otherwise.
+  addColumn(db, "campaigns", "allow_resend", "INTEGER NOT NULL DEFAULT 0");
+  addColumn(db, "schedules", "allow_resend", "INTEGER NOT NULL DEFAULT 0");
   const fallback = defaultCollectionId(db);
   db.prepare("UPDATE campaigns SET collection_id = ? WHERE collection_id IS NULL").run(fallback);
   db.prepare("UPDATE schedules SET collection_id = ? WHERE collection_id IS NULL").run(fallback);

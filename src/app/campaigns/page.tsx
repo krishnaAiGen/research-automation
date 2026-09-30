@@ -35,6 +35,7 @@ export default function CampaignsPage() {
     send_delay_ms: 3000,
     send_to_all: false,
     dry_run: true,
+    allow_resend: false,
     test_recipient: "",
   });
 
@@ -73,7 +74,15 @@ export default function CampaignsPage() {
   const collection =
     data.collections.find((c) => c.id === form.collection_id) ?? data.collections[0];
   const paperBacked = (collection?.paper_backed ?? 0) > 0;
-  const pool = collection ? (form.send_to_all ? collection.pending_all : collection.pending) : 0;
+  const pool = !collection
+    ? 0
+    : form.allow_resend
+      ? form.send_to_all
+        ? collection.resendable_all
+        : collection.resendable
+      : form.send_to_all
+        ? collection.pending_all
+        : collection.pending;
   const willSend = form.sendAll ? pool : Math.min(form.target_count, pool);
 
   const create = async (start: boolean) => {
@@ -85,6 +94,7 @@ export default function CampaignsPage() {
         name: form.name || undefined,
         target_count: form.sendAll ? 0 : form.target_count,
         collection_id: form.collection_id || undefined,
+        allow_resend: form.allow_resend,
         track_filter: form.track_filter,
         prompt_config_id: form.prompt_config_id || undefined,
         send_delay_ms: form.send_delay_ms,
@@ -135,12 +145,12 @@ export default function CampaignsPage() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Send a batch</h1>
         <p className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
-          Choose how many of the remaining addresses to email. Anyone already emailed — including
-          the {" "}
+          Choose how many addresses to email. By default anyone already emailed — including the{" "}
           <Link href="/recipients" className="underline">
             imported history
           </Link>{" "}
-          — is never contacted twice.
+          — is skipped, so nobody is contacted twice unless you tick{" "}
+          <em>Allow re-sending</em> below.
         </p>
       </div>
 
@@ -150,7 +160,7 @@ export default function CampaignsPage() {
         <StatTile
           label="Available to email now"
           value={pool.toLocaleString()}
-          hint={`${collection?.name ?? "—"} · ${form.send_to_all ? "every address" : "primary address per paper"}`}
+          hint={`${collection?.name ?? "—"} · ${form.send_to_all ? "every address" : "primary address per paper"}${form.allow_resend ? " · re-sending allowed" : ""}`}
           tone="accent"
         />
         <StatTile label="This batch will send" value={willSend.toLocaleString()} hint={form.dry_run ? "Dry run — nothing delivered" : "Live delivery"} />
@@ -192,7 +202,16 @@ export default function CampaignsPage() {
               >
                 {data.collections.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name} ({c.pending.toLocaleString()} available)
+                    {c.name} (
+                    {(form.allow_resend
+                      ? form.send_to_all
+                        ? c.resendable_all
+                        : c.resendable
+                      : form.send_to_all
+                        ? c.pending_all
+                        : c.pending
+                    ).toLocaleString()}{" "}
+                    available)
                   </option>
                 ))}
               </select>
@@ -321,7 +340,31 @@ export default function CampaignsPage() {
               />
               Dry run — generate and log the emails but deliver nothing
             </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.allow_resend}
+                onChange={(e) => setForm({ ...form, allow_resend: e.target.checked })}
+              />
+              Allow re-sending to addresses already emailed
+              {collection && collection.contacted > 0 && (
+                <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  (+{collection.contacted.toLocaleString()} previously contacted)
+                </span>
+              )}
+            </label>
           </div>
+
+          {!form.dry_run && form.allow_resend && collection && collection.contacted > 0 && (
+            <div
+              className="rounded-lg p-3 text-sm"
+              style={{ background: "rgba(208,59,59,0.10)", color: "var(--critical)" }}
+            >
+              ! Re-sending is on, so this batch can email people who have already heard from
+              you — {collection.contacted.toLocaleString()} address
+              {collection.contacted === 1 ? " has" : "es have"} been contacted before.
+            </div>
+          )}
 
           {!form.dry_run && (
             <div

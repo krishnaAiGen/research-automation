@@ -27,6 +27,9 @@ export type CollectionSummary = Collection & {
   /** Eligible right now: primary address per paper / every address. */
   pending: number;
   pending_all: number;
+  /** The same two, ignoring who has already been emailed (for a re-send). */
+  resendable: number;
+  resendable_all: number;
 };
 
 export type Recipient = {
@@ -90,6 +93,8 @@ export type Campaign = {
   send_delay_ms: number;
   send_to_all: number;
   dry_run: number;
+  /** 1 = include addresses that already received a successful send. */
+  allow_resend: number;
   test_recipient: string;
   track_filter: string;
   status: CampaignStatus;
@@ -131,6 +136,7 @@ export type Schedule = {
   window_end: string;
   send_delay_ms: number;
   dry_run: number;
+  allow_resend: number;
   enabled: number;
   next_run_at: string | null;
   last_run_at: string | null;

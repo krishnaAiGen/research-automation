@@ -30,18 +30,20 @@ export async function POST(req: Request) {
   }
 
   const sendToAll = body.send_to_all ? 1 : 0;
+  const allowResend = body.allow_resend ? 1 : 0;
   const trackFilter = String(body.track_filter ?? "");
   const available = pendingCount({
     send_to_all: sendToAll,
     track_filter: trackFilter,
     collection_id: collectionId,
+    allow_resend: allowResend,
   });
   const requested = Math.max(0, Number(body.target_count) || 0);
   const target = requested === 0 ? available : Math.min(requested, available);
 
   if (available === 0) {
     return NextResponse.json(
-      { error: "No unsent addresses match this filter." },
+      { error: allowResend ? "This collection has no addresses matching the filter." : "No unsent addresses match this filter. Tick \u201cAllow re-sending\u201d to include people already emailed." },
       { status: 400 },
     );
   }
@@ -50,8 +52,8 @@ export async function POST(req: Request) {
     .prepare(
       `INSERT INTO campaigns
         (name, prompt_config_id, schedule_id, collection_id, target_count, send_delay_ms,
-         send_to_all, dry_run, test_recipient, track_filter, status, created_at)
-       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)`,
+         send_to_all, dry_run, allow_resend, test_recipient, track_filter, status, created_at)
+       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)`,
     )
     .run(
       String(body.name || `Campaign ${new Date().toISOString().slice(0, 16).replace("T", " ")}`),
@@ -61,6 +63,7 @@ export async function POST(req: Request) {
       Math.max(0, Number(body.send_delay_ms ?? 3000)),
       sendToAll,
       body.dry_run === false ? 0 : 1,
+      allowResend,
       String(body.test_recipient ?? "").trim(),
       trackFilter,
       new Date().toISOString(),

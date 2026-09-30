@@ -55,10 +55,17 @@ export function cancelCampaign(campaignId: number) {
  * track, "has an abstract to generate from") are skipped for them.
  */
 function eligibility(filter: Partial<Campaign>): { sql: string; params: unknown[] } {
-  const where: string[] = [
-    `NOT EXISTS (SELECT 1 FROM sends s WHERE lower(s.email) = lower(r.email) AND s.status = 'sent')`,
-  ];
+  const where: string[] = [];
   const params: unknown[] = [];
+
+  // The default: an address with a successful send is never queued again. With
+  // allow_resend the batch deliberately includes them — which is what you want
+  // for a reminder, a second wave, or your own address while testing.
+  if (!filter.allow_resend) {
+    where.push(
+      `NOT EXISTS (SELECT 1 FROM sends s WHERE lower(s.email) = lower(r.email) AND s.status = 'sent')`,
+    );
+  }
 
   if (filter.collection_id) {
     where.push("r.collection_id = ?");
@@ -228,14 +235,17 @@ async function execute(state: RunState, apiKey: string) {
 
       state.current = item.email;
 
-      // Re-check: another campaign may have taken this address since the
-      // queue snapshot.
-      const taken = db
-        .prepare("SELECT 1 FROM sends WHERE lower(email) = lower(?) AND status = 'sent' LIMIT 1")
-        .get(item.email);
-      if (taken) {
-        db.prepare("UPDATE campaigns SET skipped = skipped + 1 WHERE id = ?").run(campaignId);
-        continue;
+      // Re-check: another campaign may have taken this address since the queue
+      // snapshot. Skipped when the batch is deliberately re-sending, or it would
+      // drop every address as soon as this batch itself recorded a send.
+      if (!campaign.allow_resend) {
+        const taken = db
+          .prepare("SELECT 1 FROM sends WHERE lower(email) = lower(?) AND status = 'sent' LIMIT 1")
+          .get(item.email);
+        if (taken) {
+          db.prepare("UPDATE campaigns SET skipped = skipped + 1 WHERE id = ?").run(campaignId);
+          continue;
+        }
       }
 
       // The conference and sender sides come from the config; the recipient

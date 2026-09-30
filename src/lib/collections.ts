@@ -39,6 +39,10 @@ export function collectionSummaries(): CollectionSummary[] {
     ...c,
     pending: pendingCount({ send_to_all: 0, collection_id: c.id }),
     pending_all: pendingCount({ send_to_all: 1, collection_id: c.id }),
+    // The same counts ignoring send history, so the Send page can size a batch
+    // that deliberately re-sends.
+    resendable: pendingCount({ send_to_all: 0, collection_id: c.id, allow_resend: 1 }),
+    resendable_all: pendingCount({ send_to_all: 1, collection_id: c.id, allow_resend: 1 }),
   }));
 }
 
