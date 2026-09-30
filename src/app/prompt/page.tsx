@@ -382,7 +382,15 @@ export default function PromptPage() {
             </div>
           </Card>
 
-          <Card title="System prompt" subtitle="How the model is told to draft each email">
+          <Card
+            title="System prompt"
+            subtitle={
+              aiOn
+                ? "How the model is told to draft each email"
+                : "Unused while the model is switched off"
+            }
+            right={toggle("use_system_prompt", "Use")}
+          >
             <textarea
               className="field"
               rows={10}
@@ -393,7 +401,12 @@ export default function PromptPage() {
 
           <Card
             title="User prompt"
-            subtitle="Sent per recipient. Conference, sender, and recipient fields are substituted before the call."
+            subtitle={
+              aiOn
+                ? "Sent per recipient. Conference, sender, and recipient fields are substituted before the call."
+                : "Off — no model is called and the Email template below is sent as written"
+            }
+            right={toggle("use_user_prompt", "Use AI")}
           >
             <textarea
               className="field"
