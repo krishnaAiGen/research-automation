@@ -157,8 +157,38 @@ function fire(schedule: Schedule, now: Date) {
   startCampaign(Number(info.lastInsertRowid));
 }
 
+/**
+ * Restart batches the failure breaker parked, once their hour is up.
+ *
+ * Only ones carrying a `cooldown_until` — a batch someone paused by hand has
+ * none, and must stay paused until they say otherwise.
+ */
+function resumeAfterCooldown(now: Date) {
+  const due = db
+    .prepare(
+      `SELECT id FROM campaigns
+        WHERE status = 'paused' AND cooldown_until IS NOT NULL AND cooldown_until <= ?`,
+    )
+    .all(now.toISOString()) as { id: number }[];
+
+  for (const { id } of due) {
+    if (isRunning(id)) continue;
+    const started = startCampaign(id);
+    if (started.ok) {
+      console.log(`[scheduler] batch ${id} resumed after cooldown`);
+    } else {
+      // Can't start — don't spin on it every 30 seconds.
+      db.prepare("UPDATE campaigns SET cooldown_until = NULL, error = ? WHERE id = ?").run(
+        `Could not resume after the cooldown: ${started.error}`,
+        id,
+      );
+    }
+  }
+}
+
 export function tick() {
   const now = new Date();
+  resumeAfterCooldown(now);
   for (const schedule of dueSchedules(now)) {
     try {
       if (!inWindow(schedule, now)) {

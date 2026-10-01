@@ -89,11 +89,36 @@ export class Mailer {
  * reconnects.
  */
 function isTransient(err: unknown): boolean {
-  const e = err as { code?: string; responseCode?: number };
+  const e = err as { code?: string; responseCode?: number; message?: string };
   if (!e) return false;
-  if (e.responseCode && [421, 451, 454].includes(e.responseCode)) return true;
+
+  // Never reconnect on an authentication failure. Reconnecting means logging in
+  // again, and Gmail's 454 4.7.0 is specifically "too many login attempts" — so
+  // retrying it three times per message is three more logins, which deepens the
+  // very block it is reacting to. Fail fast and let the caller back off.
+  if (isAuthFailure(e)) return false;
+
+  if (e.responseCode && [421, 451].includes(e.responseCode)) return true;
   if (e.responseCode && e.responseCode >= 500) return false;
   return ["ECONNRESET", "ETIMEDOUT", "ECONNECTION", "ESOCKET", "EPIPE"].includes(e.code ?? "");
+}
+
+/**
+ * Gmail throttling the account rather than rejecting one message. Recognised by
+ * the SMTP code, nodemailer's EAUTH, or the wording — the code alone is not
+ * enough because 454 is also used for ordinary "try again later".
+ */
+export function isAuthFailure(err: unknown): boolean {
+  const e = err as { code?: string; responseCode?: number; message?: string };
+  if (!e) return false;
+  if (e.code === "EAUTH") return true;
+  const text = String(e.message ?? "");
+  return (
+    /too many login attempts/i.test(text) ||
+    /invalid login/i.test(text) ||
+    /authentication failed/i.test(text) ||
+    (e.responseCode === 454 && /4\.7\.0/.test(text))
+  );
 }
 
 export function smtpCredsFromEnv(): SmtpCreds {

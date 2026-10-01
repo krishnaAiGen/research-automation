@@ -93,13 +93,30 @@ export default function CampaignDetail({ params }: { params: Promise<{ id: strin
         </div>
       </div>
 
-      {campaign.error && (
+      {/* A cooldown is a wait, not a failure — amber, and separate from the
+          red error banner, or it reads as "this batch is broken". */}
+      {campaign.cooldown_until && campaign.status === "paused" ? (
         <div
           className="rounded-lg p-3 text-sm"
-          style={{ background: "rgba(208,59,59,0.10)", color: "var(--critical)" }}
+          style={{ background: "rgba(250,178,25,0.10)", color: "var(--text-secondary)" }}
         >
-          ! {campaign.error}
+          <strong style={{ color: "var(--warning)" }}>Waiting after repeated failures.</strong>{" "}
+          Resuming automatically at{" "}
+          <strong>{new Date(campaign.cooldown_until).toLocaleTimeString()}</strong> and retrying the
+          addresses that failed (attempt {campaign.cooldown_count} of 3). {campaign.error}
+          <div className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+            Use Resume to try now instead of waiting.
+          </div>
         </div>
+      ) : (
+        campaign.error && (
+          <div
+            className="rounded-lg p-3 text-sm"
+            style={{ background: "rgba(208,59,59,0.10)", color: "var(--critical)" }}
+          >
+            ! {campaign.error}
+          </div>
+        )
       )}
 
       {/* A badge is too easy to miss, and "no email arrived" after a dry run

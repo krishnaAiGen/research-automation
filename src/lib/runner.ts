@@ -1,7 +1,7 @@
 import { db } from "./db";
 import { generateEmail, usesModel } from "./openrouter";
 import { renderEmail } from "./render";
-import { Mailer, smtpCredsFromEnv } from "./mailer";
+import { Mailer, smtpCredsFromEnv, isAuthFailure } from "./mailer";
 import { buildHtmlPart, newTrackId, IMAGE_CID } from "./tracking";
 import { readImage } from "./images";
 import type { Campaign, PromptConfig, QueueItem } from "./types";
@@ -12,6 +12,18 @@ type RunState = {
   paused: boolean;
   current: string | null;
 };
+
+/**
+ * Consecutive failures that trip the breaker. A handful of bad addresses in a
+ * row is normal; ten in a row is the account, not the recipients.
+ */
+export const FAILURE_STREAK_LIMIT = 10;
+
+/** How long the batch waits before trying the same addresses again. */
+export const COOLDOWN_MS = 60 * 60 * 1000;
+
+/** Cooldowns allowed before the batch stops for good. */
+export const MAX_COOLDOWNS = 3;
 
 // Survives dev-server module reloads, same reason as the db handle.
 const g = globalThis as unknown as { __raRuns?: Map<number, RunState> };
@@ -206,7 +218,7 @@ export function startCampaign(campaignId: number): { ok: boolean; error?: string
   runs.set(campaignId, state);
 
   db.prepare(
-    `UPDATE campaigns SET status = 'running', error = NULL,
+    `UPDATE campaigns SET status = 'running', error = NULL, cooldown_until = NULL,
        started_at = COALESCE(started_at, ?) WHERE id = ?`,
   ).run(new Date().toISOString(), campaignId);
 
@@ -235,12 +247,14 @@ async function execute(state: RunState, apiKey: string) {
   const live = !campaign.dry_run;
   const mailer = live ? new Mailer(smtpCredsFromEnv()) : null;
 
-  // How many more this campaign still owes. target_count 0 means "everything
-  // still pending".
-  const alreadyDone = campaign.sent + campaign.failed;
+  // Counts successes only. Were failures counted too, a batch that tripped the
+  // breaker would come back from its cooldown believing the failed addresses
+  // were already dealt with, and would never retry them — the opposite of what
+  // the cooldown is for. A permanently failing queue is bounded by MAX_COOLDOWNS
+  // instead.
   const remaining =
     campaign.target_count > 0
-      ? Math.max(0, campaign.target_count - alreadyDone)
+      ? Math.max(0, campaign.target_count - campaign.sent)
       : pendingCount(campaign);
 
   try {
@@ -248,6 +262,8 @@ async function execute(state: RunState, apiKey: string) {
     // campaign claiming the same address.
     const queue = pendingQueue(campaign, remaining + 25);
     let processed = 0;
+    let streak = 0;
+    let tripped: { reason: string; error: string } | null = null;
 
     for (const item of queue) {
       if (processed >= remaining) break;
@@ -346,7 +362,11 @@ async function execute(state: RunState, apiKey: string) {
             status: "sent",
             trackId,
           });
-          db.prepare("UPDATE campaigns SET sent = sent + 1 WHERE id = ?").run(campaignId);
+          db.prepare(
+            "UPDATE campaigns SET sent = sent + 1, cooldown_count = 0 WHERE id = ?",
+          ).run(campaignId);
+          // Recovered: forget both the streak and the cooldowns it took.
+          streak = 0;
         } catch (err) {
           recordSend({
             campaignId,
@@ -358,6 +378,21 @@ async function execute(state: RunState, apiKey: string) {
             error: `send: ${String((err as Error)?.message ?? err)}`,
           });
           db.prepare("UPDATE campaigns SET failed = failed + 1 WHERE id = ?").run(campaignId);
+
+          // An auth failure is the account being throttled, so it counts double
+          // towards the streak: there is no point working through the queue
+          // discovering the same thing another nine times.
+          const auth = isAuthFailure(err);
+          streak += auth ? FAILURE_STREAK_LIMIT : 1;
+          if (streak >= FAILURE_STREAK_LIMIT) {
+            tripped = {
+              reason: auth
+                ? "the mail account is being throttled"
+                : `${FAILURE_STREAK_LIMIT} sends failed in a row`,
+              error: String((err as Error)?.message ?? err),
+            };
+            break;
+          }
         }
       }
 
@@ -369,6 +404,29 @@ async function execute(state: RunState, apiKey: string) {
 
     campaign = loadCampaign(campaignId)!;
     const now = new Date().toISOString();
+
+    if (tripped && !state.abort.signal.aborted) {
+      const attempt = campaign.cooldown_count + 1;
+      if (attempt > MAX_COOLDOWNS) {
+        db.prepare(
+          "UPDATE campaigns SET status = 'failed', error = ?, cooldown_until = NULL, finished_at = ? WHERE id = ?",
+        ).run(
+          `Stopped after ${MAX_COOLDOWNS} cooldowns — ${tripped.reason} each time. Last error: ${tripped.error}`,
+          now,
+          campaignId,
+        );
+      } else {
+        db.prepare(
+          "UPDATE campaigns SET status = 'paused', error = ?, cooldown_until = ?, cooldown_count = ? WHERE id = ?",
+        ).run(
+          `Paused because ${tripped.reason}. Waiting an hour, then retrying the addresses that failed (attempt ${attempt} of ${MAX_COOLDOWNS}). Last error: ${tripped.error}`,
+          new Date(Date.now() + COOLDOWN_MS).toISOString(),
+          attempt,
+          campaignId,
+        );
+      }
+      return;
+    }
 
     // Falling out of the loop without an abort means either the target was met
     // or the pending pool ran dry — both are "completed".

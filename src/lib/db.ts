@@ -287,6 +287,12 @@ function migrate(db: Database.Database) {
     "UPDATE campaigns SET dry_run = 0 WHERE dry_run = 1 AND status IN ('draft','queued','paused')",
   ).run();
 
+  // Circuit breaker. A run of consecutive send failures usually means the
+  // account is throttled, not that these particular addresses are bad, so the
+  // batch waits rather than burning through the queue marking everyone failed.
+  addColumn(db, "campaigns", "cooldown_until", "TEXT");
+  addColumn(db, "campaigns", "cooldown_count", "INTEGER NOT NULL DEFAULT 0");
+
   // An image embedded in every email this configuration sends. The file lives
   // in UPLOADS_DIR; only its name and metadata are stored here.
   addColumn(db, "prompt_configs", "image_file", "TEXT NOT NULL DEFAULT ''");

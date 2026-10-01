@@ -111,6 +111,10 @@ export type Campaign = {
   failed: number;
   skipped: number;
   error: string | null;
+  /** Set when the breaker paused this batch; the scheduler resumes it after. */
+  cooldown_until: string | null;
+  /** How many cooldowns so far. At MAX_COOLDOWNS the batch gives up. */
+  cooldown_count: number;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;

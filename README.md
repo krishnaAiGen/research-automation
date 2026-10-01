@@ -148,6 +148,18 @@ are never touched by an import or by `npm run reset`.
 - **A crash pauses rather than loses.** Anything left `running` at startup is
   marked `paused` and can be resumed; the pool query means it picks up exactly
   where it stopped.
+- **A run of failures pauses the batch instead of burning the queue.** Ten
+  consecutive failures — or a single authentication failure, which means the
+  account is throttled rather than the address being bad — park the batch for an
+  hour. The scheduler resumes it automatically and retries exactly the addresses
+  that did not succeed, since eligibility is keyed on successful sends. After
+  three cooldowns without a success the batch stops with `failed`. A success
+  resets both counters.
+- **An auth failure never triggers a reconnect.** Gmail's `454 4.7.0 Too many
+  login attempts` is a complaint about logging in, so reconnecting and retrying
+  three times per message — which is what the generic transient path did — makes
+  it strictly worse. Those errors now fail the message immediately and let the
+  breaker back off.
 - **SMTP connections recycle every 50 messages**, because Gmail expires
   long-lived connections and a large batch always outlives one. Transient
   failures reconnect and retry; permanent rejections fail fast and are counted.
