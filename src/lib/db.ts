@@ -6,6 +6,12 @@ import { DEFAULT_MODEL } from "./models";
 const DATA_DIR = path.join(process.cwd(), "data");
 const DB_PATH = process.env.DATABASE_PATH || path.join(DATA_DIR, "app.db");
 
+/**
+ * Uploaded images live beside the database, so they are on the same Docker
+ * volume and survive a redeploy without any extra mount.
+ */
+export const UPLOADS_DIR = path.join(path.dirname(DB_PATH), "uploads");
+
 // --------------------------------------------------------------------------
 // Default prompt config — conference announcement emails. The conference and
 // sender details are fixed per configuration (edited on the Email prompt
@@ -281,6 +287,12 @@ function migrate(db: Database.Database) {
     "UPDATE campaigns SET dry_run = 0 WHERE dry_run = 1 AND status IN ('draft','queued','paused')",
   ).run();
 
+  // An image embedded in every email this configuration sends. The file lives
+  // in UPLOADS_DIR; only its name and metadata are stored here.
+  addColumn(db, "prompt_configs", "image_file", "TEXT NOT NULL DEFAULT ''");
+  addColumn(db, "prompt_configs", "image_mime", "TEXT NOT NULL DEFAULT ''");
+  addColumn(db, "prompt_configs", "image_name", "TEXT NOT NULL DEFAULT ''");
+
   // Opt-in per batch: include addresses that already have a successful send.
   // Defaults to 0 so the "nobody is emailed twice" behaviour is what you get
   // unless you ask otherwise.
@@ -300,6 +312,29 @@ function migrate(db: Database.Database) {
   for (const column of CONFERENCE_FIELDS) {
     addColumn(db, "prompt_configs", column, "TEXT NOT NULL DEFAULT ''");
   }
+
+  // Per-send tracking token. The pixel and rewritten links carry it, so an
+  // event can be attributed to one row of `sends`. Rows from before tracking
+  // existed keep NULL and simply never match an event.
+  addColumn(db, "sends", "track_id", "TEXT");
+
+  // Open and click events, appended by /api/track/*. One row per pixel fetch
+  // or link click — repeated opens are signal (re-reads), not noise to dedupe
+  // at write time; the analytics queries count both ways.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS email_events (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      track_id   TEXT NOT NULL,
+      event      TEXT NOT NULL,
+      position   TEXT NOT NULL DEFAULT '',
+      url        TEXT NOT NULL DEFAULT '',
+      user_agent TEXT NOT NULL DEFAULT '',
+      ip         TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_email_events_track ON email_events(track_id);
+    CREATE INDEX IF NOT EXISTS idx_email_events_event ON email_events(event);
+  `);
 
   // Deliberately no "move old defaults forward" step for the model: every
   // entry in MODEL_CHOICES is something the user can pick, so rewriting one on

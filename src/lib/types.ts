@@ -57,6 +57,11 @@ export type PromptConfig = {
   use_system_prompt: number;
   /** 0 = skip the model entirely and send the template as written. */
   use_user_prompt: number;
+  /** Stored filename in UPLOADS_DIR, '' when no image is set. */
+  image_file: string;
+  image_mime: string;
+  /** The name the file was uploaded under — display only. */
+  image_name: string;
   template: string;
   product_url: string;
   demo_url: string;
@@ -123,6 +128,8 @@ export type Send = {
   status: "sent" | "failed" | "dry";
   error: string | null;
   source: "app" | "import";
+  /** Per-send token carried by the pixel and rewritten links. */
+  track_id: string | null;
   created_at: string;
 };
 

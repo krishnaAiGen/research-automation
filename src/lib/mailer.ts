@@ -44,7 +44,13 @@ export class Mailer {
     await this.connect().verify();
   }
 
-  async send(to: string[], subject: string, body: string): Promise<void> {
+  async send(
+    to: string[],
+    subject: string,
+    body: string,
+    html?: string,
+    attachments?: { filename: string; content: Buffer; cid: string }[],
+  ): Promise<void> {
     const attempts = 3;
     for (let attempt = 0; attempt < attempts; attempt++) {
       try {
@@ -55,6 +61,14 @@ export class Mailer {
           to: to.join(", "),
           subject,
           text: body,
+          // The HTML part is where tracking lives (pixel + rewritten links);
+          // clients that render it get the richer view, text-only clients
+          // silently fall back to `text` with no tracking at all.
+          ...(html ? { html } : {}),
+          // Embedded by Content-ID, not linked: the image renders without the
+          // recipient granting remote-image permission, and needs nothing of
+          // ours to be reachable from their network.
+          ...(attachments?.length ? { attachments } : {}),
         });
         return;
       } catch (err) {

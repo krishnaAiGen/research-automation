@@ -104,6 +104,37 @@ export default function PromptPage() {
     setToast({ msg: "Starter prompt for a hand-built list created.", tone: "ok" });
   };
 
+  /**
+   * Uploaded separately from Save: it is a multipart POST, and the file is
+   * stored on disk rather than being part of the configuration's JSON.
+   */
+  const uploadImage = async (file: File) => {
+    if (!draft) return;
+    setBusy("image-upload");
+    const data = new FormData();
+    data.append("image", file);
+    const res = await fetch(`/api/prompts/${draft.id}/image`, { method: "POST", body: data });
+    const json = await res.json().catch(() => ({}));
+    setBusy(null);
+    if (!res.ok) return setToast({ msg: json.error ?? "Upload failed", tone: "error" });
+    await load(draft.id);
+    setToast({
+      msg: `Image attached (${Math.round((json.bytes ?? 0) / 1024)} KB per email).`,
+      tone: "ok",
+    });
+  };
+
+  const removeImage = async () => {
+    if (!draft) return;
+    setBusy("image-delete");
+    const res = await fetch(`/api/prompts/${draft.id}/image`, { method: "DELETE" });
+    const json = await res.json().catch(() => ({}));
+    setBusy(null);
+    if (!res.ok) return setToast({ msg: json.error ?? "Could not remove", tone: "error" });
+    await load(draft.id);
+    setToast({ msg: "Image removed.", tone: "ok" });
+  };
+
   const remove = async () => {
     if (!draft) return;
     setBusy("delete");
@@ -426,6 +457,55 @@ export default function PromptPage() {
               value={draft.template}
               onChange={(e) => set("template", e.target.value)}
             />
+          </Card>
+
+          <Card
+            title="Image"
+            subtitle="Embedded below the text of every email this configuration sends"
+          >
+            {draft.image_file ? (
+              <div className="flex flex-wrap items-start gap-4">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`/api/images/${draft.image_file}`}
+                  alt={draft.image_name}
+                  className="rounded-lg"
+                  style={{ maxWidth: 240, maxHeight: 160, border: "1px solid var(--border)" }}
+                />
+                <div className="space-y-2">
+                  <div className="text-sm">{draft.image_name}</div>
+                  <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                    Attached to each message by Content-ID, so it shows even in clients that
+                    block remote images.
+                  </div>
+                  <button
+                    className="btn btn-danger"
+                    onClick={removeImage}
+                    disabled={busy === "image-delete"}
+                  >
+                    {busy === "image-delete" ? "Removing…" : "Remove image"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <Field
+                label="Upload an image"
+                hint="PNG, JPEG, GIF or WebP, up to 2 MB. It rides along with every message, so keep it small."
+              >
+                <input
+                  type="file"
+                  className="field"
+                  accept="image/png,image/jpeg,image/gif,image/webp"
+                  disabled={busy === "image-upload"}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    // Reset so re-picking the same file fires onChange again.
+                    e.target.value = "";
+                    if (f) uploadImage(f);
+                  }}
+                />
+              </Field>
+            )}
           </Card>
 
           <div className="flex flex-wrap items-center gap-2">

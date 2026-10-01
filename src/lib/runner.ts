@@ -2,6 +2,8 @@ import { db } from "./db";
 import { generateEmail, usesModel } from "./openrouter";
 import { renderEmail } from "./render";
 import { Mailer, smtpCredsFromEnv } from "./mailer";
+import { buildHtmlPart, newTrackId, IMAGE_CID } from "./tracking";
+import { readImage } from "./images";
 import type { Campaign, PromptConfig, QueueItem } from "./types";
 
 type RunState = {
@@ -129,11 +131,12 @@ function recordSend(row: {
   body: string;
   status: "sent" | "failed" | "dry";
   error?: string | null;
+  trackId?: string | null;
 }) {
   db.prepare(
     `INSERT INTO sends (campaign_id, paper_id, email, subject, topic, queries, body,
-                        status, error, source, created_at)
-     VALUES (?, ?, ?, ?, '', '[]', ?, ?, ?, 'app', ?)`,
+                        status, error, source, track_id, created_at)
+     VALUES (?, ?, ?, ?, '', '[]', ?, ?, ?, 'app', ?, ?)`,
   ).run(
     row.campaignId,
     row.paperId,
@@ -142,6 +145,7 @@ function recordSend(row: {
     row.body,
     row.status,
     row.error ?? null,
+    row.trackId ?? null,
     new Date().toISOString(),
   );
 }
@@ -221,6 +225,13 @@ async function execute(state: RunState, apiKey: string) {
   let campaign = loadCampaign(campaignId)!;
   const cfg = loadConfig(campaign.prompt_config_id);
   const aiEnabled = usesModel(cfg);
+  // Loaded once for the whole batch rather than per message. A missing file
+  // (deleted from the volume behind the app's back) degrades to no image
+  // rather than failing every send.
+  const imageData = cfg.image_file ? readImage(cfg.image_file) : null;
+  const attachments = imageData
+    ? [{ filename: cfg.image_name || cfg.image_file, content: imageData, cid: IMAGE_CID }]
+    : undefined;
   const live = !campaign.dry_run;
   const mailer = live ? new Mailer(smtpCredsFromEnv()) : null;
 
@@ -305,6 +316,10 @@ async function execute(state: RunState, apiKey: string) {
         body = fallback.body;
       }
 
+      // One tracking token per send: the pixel fetches and rewritten links all
+      // carry it, so open/click events attribute back to this exact row.
+      const trackId = newTrackId();
+
       if (!live) {
         recordSend({
           campaignId,
@@ -313,11 +328,15 @@ async function execute(state: RunState, apiKey: string) {
           subject,
           body,
           status: "dry",
+          trackId,
         });
         db.prepare("UPDATE campaigns SET sent = sent + 1 WHERE id = ?").run(campaignId);
       } else {
         try {
-          await mailer!.send(recipients, subject, body);
+          // The HTML part carries the pixel and rewritten links (when tracking
+          // is enabled); text-only clients fall back to the plain part.
+          const { html } = buildHtmlPart(body, trackId, attachments ? IMAGE_CID : undefined);
+          await mailer!.send(recipients, subject, body, html, attachments);
           recordSend({
             campaignId,
             paperId: item.paper_id,
@@ -325,6 +344,7 @@ async function execute(state: RunState, apiKey: string) {
             subject,
             body,
             status: "sent",
+            trackId,
           });
           db.prepare("UPDATE campaigns SET sent = sent + 1 WHERE id = ?").run(campaignId);
         } catch (err) {

@@ -413,7 +413,9 @@ the unprivileged `node` user, the scheduler starting exactly once, data survivin
 `docker restart`, and the container reporting `healthy`.
 
 **The volume is the whole point.** Compose declares a named volume `app-data`
-mounted at `/data`, and `DATABASE_PATH=/data/app.db` points the app into it. It
+mounted at `/data`, and `DATABASE_PATH=/data/app.db` points the app into it.
+Uploaded images go to `/data/uploads/` beside the database, so they are on the
+same volume and survive a redeploy with no extra mount. It
 outlives the container, so `docker compose up --build` after a `git pull`
 redeploys code and keeps data. `docker compose down` keeps it too; only
 `docker compose down -v` destroys it. Don't override `DATABASE_PATH`, or the

@@ -3,6 +3,7 @@ node_modules/
 out/
 build/
 data/*.db
+data/uploads/
 data/*.db-journal
 data/*.db-wal
 data/*.db-shm

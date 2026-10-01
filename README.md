@@ -203,6 +203,7 @@ scripts/import.ts          papers.json (+ optional sent_log.jsonl) -> SQLite
 scripts/reset.ts           clear send history, with a backup first
 src/lib/db.ts              schema, migrations, default + contact prompts
 src/lib/auth.ts            session signing, edge-safe (WebCrypto only)
+src/lib/images.ts          uploaded images: validation, storage, safe lookup
 src/middleware.ts          gates every page and API route on a session
 src/lib/models.ts          the selectable models and their tradeoffs
 src/lib/collections.ts     recipient lists: CRUD, bulk add, counts
