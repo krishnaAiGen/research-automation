@@ -130,19 +130,13 @@ export type RecentSend = {
   created_at: string;
   campaign_name: string | null;
   title: string | null;
-  opens: number;
-  clicks: number;
 };
 
 export function recentSends(limit = 20): RecentSend[] {
   return db
     .prepare(
       `SELECT s.id, s.email, s.subject, s.topic, s.status, s.error, s.created_at,
-              c.name AS campaign_name, p.title AS title,
-              (SELECT COUNT(*) FROM email_events e
-                WHERE e.track_id = s.track_id AND e.event = 'open') AS opens,
-              (SELECT COUNT(*) FROM email_events e
-                WHERE e.track_id = s.track_id AND e.event = 'click') AS clicks
+              c.name AS campaign_name, p.title AS title
          FROM sends s
          LEFT JOIN campaigns c ON c.id = s.campaign_id
          LEFT JOIN papers p ON p.id = s.paper_id
@@ -151,55 +145,8 @@ export function recentSends(limit = 20): RecentSend[] {
     .all(limit) as RecentSend[];
 }
 
-export type Engagement = {
-  /** Delivered emails that carry a tracking token — the denominator. */
-  tracked: number;
-  /** Delivered emails with at least one open event. */
-  uniqueOpens: number;
-  /** Every open event, including repeats and privacy-proxy prefetches. */
-  totalOpens: number;
-  openRate: number;
-  /** Delivered emails with at least one click — the trustworthy signal. */
-  uniqueClicks: number;
-  totalClicks: number;
-  clickRate: number;
-};
-
-/**
- * Open and click engagement over delivered mail. Opens are probabilistic —
- * Apple Mail privacy proxies prefetch the pixel, inflating uniques — so the
- * UI always shows clicks alongside. Denominator is status='sent' rows with a
- * token; sends from before tracking, and text-only-client deliveries, sit in
- * the denominator without ever matching events.
- */
-export function engagement(): Engagement {
-  const row = db
-    .prepare(
-      `SELECT
-         (SELECT COUNT(*) FROM sends WHERE status = 'sent' AND track_id IS NOT NULL) AS tracked,
-         (SELECT COUNT(DISTINCT s.id) FROM sends s JOIN email_events e
-            ON e.track_id = s.track_id AND e.event = 'open'
-           WHERE s.status = 'sent')                                                   AS uniqueOpens,
-         (SELECT COUNT(*) FROM email_events e JOIN sends s
-            ON e.track_id = s.track_id
-           WHERE s.status = 'sent' AND e.event = 'open')                              AS totalOpens,
-         (SELECT COUNT(DISTINCT s.id) FROM sends s JOIN email_events e
-            ON e.track_id = s.track_id AND e.event = 'click'
-           WHERE s.status = 'sent')                                                   AS uniqueClicks,
-         (SELECT COUNT(*) FROM email_events e JOIN sends s
-            ON e.track_id = s.track_id
-           WHERE s.status = 'sent' AND e.event = 'click')                             AS totalClicks`,
-    )
-    .get() as Omit<Engagement, "openRate" | "clickRate">;
-
-  return {
-    ...row,
-    openRate: row.tracked > 0 ? (row.uniqueOpens / row.tracked) * 100 : 0,
-    clickRate: row.tracked > 0 ? (row.uniqueClicks / row.tracked) * 100 : 0,
-  };
-}
-
-export type CampaignSummary = {  id: number;
+export type CampaignSummary = {
+  id: number;
   name: string;
   status: string;
   target_count: number;

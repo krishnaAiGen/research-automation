@@ -319,28 +319,9 @@ function migrate(db: Database.Database) {
     addColumn(db, "prompt_configs", column, "TEXT NOT NULL DEFAULT ''");
   }
 
-  // Per-send tracking token. The pixel and rewritten links carry it, so an
-  // event can be attributed to one row of `sends`. Rows from before tracking
-  // existed keep NULL and simply never match an event.
-  addColumn(db, "sends", "track_id", "TEXT");
-
-  // Open and click events, appended by /api/track/*. One row per pixel fetch
-  // or link click — repeated opens are signal (re-reads), not noise to dedupe
-  // at write time; the analytics queries count both ways.
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS email_events (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
-      track_id   TEXT NOT NULL,
-      event      TEXT NOT NULL,
-      position   TEXT NOT NULL DEFAULT '',
-      url        TEXT NOT NULL DEFAULT '',
-      user_agent TEXT NOT NULL DEFAULT '',
-      ip         TEXT NOT NULL DEFAULT '',
-      created_at TEXT NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_email_events_track ON email_events(track_id);
-    CREATE INDEX IF NOT EXISTS idx_email_events_event ON email_events(event);
-  `);
+  // Deliberately no tracking schema: the pixel/link-tracking experiment was
+  // removed — invisible pixels and rewritten links are spam-filter signals,
+  // and the emails were landing in spam with them.
 
   // Deliberately no "move old defaults forward" step for the model: every
   // entry in MODEL_CHOICES is something the user can pick, so rewriting one on

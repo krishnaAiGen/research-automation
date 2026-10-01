@@ -132,8 +132,6 @@ export type Send = {
   status: "sent" | "failed" | "dry";
   error: string | null;
   source: "app" | "import";
-  /** Per-send token carried by the pixel and rewritten links. */
-  track_id: string | null;
   created_at: string;
 };
 

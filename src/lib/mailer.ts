@@ -61,9 +61,9 @@ export class Mailer {
           to: to.join(", "),
           subject,
           text: body,
-          // The HTML part is where tracking lives (pixel + rewritten links);
-          // clients that render it get the richer view, text-only clients
-          // silently fall back to `text` with no tracking at all.
+          // Minimal HTML (converted text, embedded image via Content-ID when
+          // configured). No tracking pixel, no rewritten links, no remote
+          // content — nothing image-based for spam filters to score.
           ...(html ? { html } : {}),
           // Embedded by Content-ID, not linked: the image renders without the
           // recipient granting remote-image permission, and needs nothing of

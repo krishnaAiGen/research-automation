@@ -7,7 +7,6 @@ import {
   topDomains,
   recentSends,
   campaignSummaries,
-  engagement,
 } from "@/lib/stats";
 import { runningCampaignIds } from "@/lib/runner";
 
@@ -17,7 +16,6 @@ export async function GET(req: Request) {
   const days = Number(new URL(req.url).searchParams.get("days") ?? 30);
   return NextResponse.json({
     overview: overview(),
-    engagement: engagement(),
     byDay: sendsByDay(Number.isFinite(days) && days > 0 ? Math.min(days, 180) : 30),
     byTrack: byTrack(),
     topDomains: topDomains(),

@@ -2,7 +2,7 @@ import { db } from "./db";
 import { generateEmail, usesModel } from "./openrouter";
 import { renderEmail } from "./render";
 import { Mailer, smtpCredsFromEnv, isAuthFailure } from "./mailer";
-import { buildHtmlPart, newTrackId, IMAGE_CID } from "./tracking";
+import { buildHtmlPart, IMAGE_CID } from "./email-html";
 import { readImage } from "./images";
 import type { Campaign, PromptConfig, QueueItem } from "./types";
 
@@ -143,12 +143,11 @@ function recordSend(row: {
   body: string;
   status: "sent" | "failed" | "dry";
   error?: string | null;
-  trackId?: string | null;
 }) {
   db.prepare(
     `INSERT INTO sends (campaign_id, paper_id, email, subject, topic, queries, body,
-                        status, error, source, track_id, created_at)
-     VALUES (?, ?, ?, ?, '', '[]', ?, ?, ?, 'app', ?, ?)`,
+                        status, error, source, created_at)
+     VALUES (?, ?, ?, ?, '', '[]', ?, ?, ?, 'app', ?)`,
   ).run(
     row.campaignId,
     row.paperId,
@@ -157,7 +156,6 @@ function recordSend(row: {
     row.body,
     row.status,
     row.error ?? null,
-    row.trackId ?? null,
     new Date().toISOString(),
   );
 }
@@ -332,10 +330,6 @@ async function execute(state: RunState, apiKey: string) {
         body = fallback.body;
       }
 
-      // One tracking token per send: the pixel fetches and rewritten links all
-      // carry it, so open/click events attribute back to this exact row.
-      const trackId = newTrackId();
-
       if (!live) {
         recordSend({
           campaignId,
@@ -344,14 +338,14 @@ async function execute(state: RunState, apiKey: string) {
           subject,
           body,
           status: "dry",
-          trackId,
         });
         db.prepare("UPDATE campaigns SET sent = sent + 1 WHERE id = ?").run(campaignId);
       } else {
         try {
-          // The HTML part carries the pixel and rewritten links (when tracking
-          // is enabled); text-only clients fall back to the plain part.
-          const { html } = buildHtmlPart(body, trackId, attachments ? IMAGE_CID : undefined);
+          // Minimal HTML (converted text + the embedded image, if any). No
+          // tracking pixel, no rewritten links, no remote content — none of
+          // the artifacts spam filters score against a sender.
+          const html = buildHtmlPart(body, attachments ? IMAGE_CID : undefined);
           await mailer!.send(recipients, subject, body, html, attachments);
           recordSend({
             campaignId,
@@ -360,7 +354,6 @@ async function execute(state: RunState, apiKey: string) {
             subject,
             body,
             status: "sent",
-            trackId,
           });
           db.prepare(
             "UPDATE campaigns SET sent = sent + 1, cooldown_count = 0 WHERE id = ?",
